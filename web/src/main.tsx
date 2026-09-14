@@ -10,6 +10,6 @@ void prepareIsolation().then(async () => {
     beacon.dataset.cfBeacon = JSON.stringify({token: '570458f3f91e4805b21cdc84923f0057'});
     document.head.append(beacon);
   }
-  createRoot(document.getElementById('root')!).render(<App loadDefaultExample/>);
+  createRoot(document.getElementById('root')!).render(<App/>);
   void loadCatalog().catch(()=>{});
 });
