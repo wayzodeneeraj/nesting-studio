@@ -1,0 +1,36 @@
+[build]
+  base = "web"
+  command = """
+    # Install Rust stable toolchain
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    . $HOME/.cargo/env
+    rustup target add wasm32-unknown-unknown
+
+    # Install Rust nightly-2026-08-30 with rust-src component
+    rustup toolchain install nightly-2026-08-30 --profile minimal --component rust-src --target wasm32-unknown-unknown
+
+    # Install wasm-pack
+    npm install --global wasm-pack@0.15.0
+
+    # Build the project
+    npm ci
+    npm run build
+  """
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+  RUST_CACHE_DIR = ".netlify/rust-cache"
+
+# Enable COOP/COEP headers for SharedArrayBuffer support
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "require-corp"
+
+# Ensure SPA routing works under /nest/
+[[redirects]]
+  from = "/nest/*"
+  to = "/nest/index.html"
+  status = 200
