@@ -1,5 +1,5 @@
 import polygonClipping from 'polygon-clipping';
-import { LIMITS, POLICY, type Document, type Part, type Placement, type Point, type Result, type Ring, type Validation } from '../model';
+import { LIMITS, POLICY, rotationAngles, type Document, type Part, type Placement, type Point, type Result, type Ring, type Validation } from '../model';
 import { area, bounds, intersects, normalizeDocument, normalizePart } from './normalize';
 
 export type WorldPart = { partId: string; copyIndex: number; outer: Ring; holes: Ring[] };
@@ -45,7 +45,8 @@ export function validate(doc: Document, result: Result, serialized?: WorldPart[]
       const key=JSON.stringify([p.partId,p.copyIndex]);
       if(seen.has(key)) throw Error('Duplicate part copy.');
       seen.add(key);
-      if(part.rotations.kind==='discrete' && !part.rotations.degrees.some(a=>Math.abs(((p.angleDeg-a)%360+540)%360-180)<=POLICY.angleDeg)) throw Error(`Disallowed rotation for ${part.name}.`);
+      const allowed=rotationAngles(part.rotations).map(a=>((a%360)+360)%360);
+      if(!allowed.some(a=>Math.abs(((p.angleDeg-a)%360+540)%360-180)<=POLICY.angleDeg)) throw Error(`Disallowed rotation for ${part.name}.`);
     }
     const expected=worldParts(doc,result),world=serialized ?? expected;
     if(world.length!==result.placements.length) throw Error('Serialized contour count differs from the layout.');
@@ -73,7 +74,7 @@ export function validate(doc: Document, result: Result, serialized?: WorldPart[]
         v.overlapAreaMm2=Math.max(v.overlapAreaMm2,overlap);
         if(overlap>POLICY.overlapMm2 && v.errors.length<20) v.errors.push(`Copies ${j+1} and ${i+1} overlap by ${overlap} mm².`);
       }
-      if(doc.settings.clearanceMm>0 && (v.minClearanceMm===null || boxDistance<v.minClearanceMm)) {
+      if(doc.settings.partClearanceMm>0 && (v.minClearanceMm===null || boxDistance<v.minClearanceMm)) {
         operations+=world[i].outer.length*world[j].outer.length;
         if(operations>50_000_000) throw Error('Clearance check exceeded its segment budget. Use fewer vertices or parts.');
         const gap=distance(world[i].outer,world[j].outer);
@@ -81,7 +82,7 @@ export function validate(doc: Document, result: Result, serialized?: WorldPart[]
         v.minClearanceMm=Math.min(v.minClearanceMm ?? Infinity,gap);
       }
     }
-    if(v.minClearanceMm!==null && v.minClearanceMm+POLICY.linearMm<doc.settings.clearanceMm) v.errors.push(`Minimum clearance is ${v.minClearanceMm} mm; requested ${doc.settings.clearanceMm} mm.`);
+    if(v.minClearanceMm!==null && v.minClearanceMm+POLICY.linearMm<doc.settings.partClearanceMm) v.errors.push(`Minimum clearance is ${v.minClearanceMm} mm; requested ${doc.settings.partClearanceMm} mm.`);
     v.status=v.errors.length?'failed':'passed';
   } catch(error) { v.errors.push(error instanceof Error?error.message:String(error)); }
   return v;

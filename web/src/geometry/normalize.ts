@@ -55,7 +55,9 @@ export function normalizePart(part: Part): Part {
   if (!Number.isInteger(part.quantity) || part.quantity < 0 || part.quantity > LIMITS.copies) throw Error('Quantity must be a whole number from 0 to 500.');
   if (!Number.isFinite(part.approximationToleranceMm) || part.approximationToleranceMm < 0 || part.approximationToleranceMm > 100) throw Error('Invalid approximation tolerance.');
   if (!Array.isArray(part.preparationPosition) || part.preparationPosition.length !== 2 || !part.preparationPosition.every(Number.isFinite)) throw Error('Invalid preparation position.');
-  if (!part.rotations || (part.rotations.kind !== 'continuous' && (part.rotations.kind !== 'discrete' || !Array.isArray(part.rotations.degrees) || !part.rotations.degrees.length || !part.rotations.degrees.every(Number.isFinite)))) throw Error('Discrete rotations require a nonempty list of finite degrees.');
+  if (!part.rotations || typeof part.rotations.mode !== 'string' || typeof part.rotations.allowMirror !== 'boolean' || typeof part.rotations.grainLocked !== 'boolean') throw Error('Invalid rotation configuration.');
+  if (part.rotations.mode === 'incremental' && (!Number.isFinite(part.rotations.stepDegrees) || part.rotations.stepDegrees! <= 0)) throw Error('Incremental rotation requires positive stepDegrees.');
+  if (part.rotations.allowedAnglesDegrees && (!Array.isArray(part.rotations.allowedAnglesDegrees) || !part.rotations.allowedAnglesDegrees.length || !part.rotations.allowedAnglesDegrees.every(Number.isFinite))) throw Error('Allowed angles must be a nonempty list of finite degrees.');
   const outer = normalizeRing(part.outer);
   if (!Array.isArray(part.holes)) throw Error('Holes must be an array.');
   const holes = part.holes.map(normalizeRing);
@@ -74,7 +76,7 @@ export function scalePart(part:Part,factor:number):Part {
 export function normalizeDocument(doc: Document, allowEmpty=false): Document {
   if (typeof doc.name !== 'string' || !doc.name.trim() || !Array.isArray(doc.parts) || (!allowEmpty&&!doc.parts.length) || doc.parts.length > 500) throw Error('Project needs 1–500 part types.');
   const s = doc.settings;
-  if (!s || !Number.isFinite(s.materialWidthMm) || s.materialWidthMm <= 0 || s.materialWidthMm > LIMITS.extent || !Number.isFinite(s.clearanceMm) || s.clearanceMm < 0 || s.clearanceMm >= s.materialWidthMm || (s.timeLimitSeconds!==null && ![10,30,60,120,300,600].includes(s.timeLimitSeconds))) throw Error('Invalid material width, clearance, or run duration.');
+  if (!s || !Number.isFinite(s.materialWidthMm) || s.materialWidthMm <= 0 || s.materialWidthMm > LIMITS.extent || !Number.isFinite(s.sheetHeightMm) || s.sheetHeightMm <= 0 || s.sheetHeightMm > LIMITS.extent || !['router','laser'].includes(s.machineType) || !Number.isFinite(s.partClearanceMm) || s.partClearanceMm < 0 || !Number.isFinite(s.edgeMarginMm) || s.edgeMarginMm < 0 || (s.timeLimitSeconds!==null && ![10,30,60,120,300,600].includes(s.timeLimitSeconds))) throw Error('Invalid material dimensions, machine type, clearance, or run duration.');
   if(s.solverPreset!==undefined&&!['standard','fast'].includes(s.solverPreset))throw Error('Invalid solver preset.');
   const parts = doc.parts.map(normalizePart);
   if (new Set(parts.map(p=>p.id)).size !== parts.length) throw Error('Part IDs must be unique.');

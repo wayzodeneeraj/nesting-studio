@@ -1,26 +1,132 @@
-import type {Document,Project,Result} from '../model';
+import type {Document,Project,Result,RotationConfig,RotationRule,MachineType} from '../model';
 import {normalizeDocument} from '../geometry/normalize';
 import {validate} from '../geometry/validate';
 import {documentPlacements,placementKey,samePlacement,withDocumentPlacements} from '../geometry/placements';
 import type {ImportReview} from './sparrow';
 
+// Legacy v1 project types for migration
+type LegacyV1Settings = {
+  solverPreset?: 'standard' | 'fast';
+  materialWidthMm: number;
+  clearanceMm: number;
+  timeLimitSeconds: 10 | 30 | 60 | 120 | 300 | 600 | null;
+};
+type LegacyV1Part = {
+  id: string; name: string;
+  source: { format: 'svg' | 'dxf' | 'sparrow' | 'drawn'; fileName?: string; entityId?: string };
+  outer: [number, number][]; holes: [number, number][][];
+  approximationToleranceMm: number; quantity: number;
+  rotations: RotationRule;
+  preparationPosition: [number, number];
+};
+type LegacyV1Project = {
+  schemaVersion: 1;
+  revision: number;
+  name: string;
+  parts: LegacyV1Part[];
+  settings: LegacyV1Settings;
+  placements?: { partId: string; copyIndex: number; xMm: number; yMm: number; angleDeg: number }[];
+  result?: any; // will be discarded
+};
+
+/** Migrate v1 rotation format to v2 */
+function migrateRotation(legacy: RotationRule): RotationConfig {
+  if (legacy.kind === 'continuous') {
+    // Continuous rotation cannot be represented exactly; map to incremental 15°
+    return { mode: 'incremental', stepDegrees: 15, allowMirror: false, grainLocked: false };
+  }
+  const degrees = [...new Set(legacy.degrees.map(d => ((d % 360) + 360) % 360))].sort((a,b) => a-b);
+  if (degrees.length === 1 && degrees[0] === 0) return { mode: 'fixed', allowMirror: false, grainLocked: false };
+  if (degrees.length === 2 && degrees[0] === 0 && degrees[1] === 180) return { mode: 'halfTurn', allowMirror: false, grainLocked: false };
+  if (degrees.length === 4 && degrees.every((d,i) => d === i*90)) return { mode: 'orthogonal', allowMirror: false, grainLocked: false };
+  // Custom angle set - preserve exactly
+  return { mode: 'fixed', allowedAnglesDegrees: degrees, allowMirror: false, grainLocked: false };
+}
+
+/** Migrate v1 project to v2 schema */
+function migrateFromV1(v1: LegacyV1Project): { document: Document; warnings: string[] } {
+  const warnings: string[] = [];
+
+  // Detect machine type heuristically: if clearance > 1mm, likely router; else laser
+  const machineType: MachineType = v1.settings.clearanceMm > 1 ? 'router' : 'laser';
+
+  // Default sheet height - standard 2440×1220 sheet
+  const sheetHeightMm = 1220;
+  warnings.push(`Migrated from v1: sheet height set to ${sheetHeightMm} mm (standard 2440×1220 sheet). Strip width (${v1.settings.materialWidthMm} mm) preserved as sheet width.`);
+
+  // Map clearance to part clearance and edge margin
+  // Heuristic: if clearance is 0, use minimal margins; else split between part and edge
+  const partClearanceMm = v1.settings.clearanceMm;
+  const edgeMarginMm = v1.settings.clearanceMm > 0 ? Math.max(5, v1.settings.clearanceMm) : 0;
+
+  const settings = {
+    solverPreset: v1.settings.solverPreset,
+    materialWidthMm: v1.settings.materialWidthMm,
+    sheetHeightMm,
+    machineType,
+    partClearanceMm,
+    edgeMarginMm,
+    timeLimitSeconds: v1.settings.timeLimitSeconds,
+  };
+
+  const parts = v1.parts.map(p => ({
+    id: p.id,
+    name: p.name,
+    source: p.source,
+    outer: p.outer,
+    holes: p.holes,
+    approximationToleranceMm: p.approximationToleranceMm,
+    quantity: p.quantity,
+    rotations: migrateRotation(p.rotations),
+    preparationPosition: p.preparationPosition,
+  }));
+
+  // Placements are preserved, but result is discarded (strip layout cannot be reinterpreted as sheet layout)
+  if (v1.result) {
+    warnings.push('Saved strip-packing result discarded: cannot reinterpret strip layout as fixed-sheet layout. Parts and settings preserved; re-nest required.');
+  }
+
+  const document = { name: v1.name, parts, settings, placements: v1.placements };
+  return { document, warnings };
+}
+
 export function importProject(text:string):ImportReview {
-  const data=JSON.parse(text) as Project;
-  if(!data||data.schemaVersion!==1)throw Error('Unsupported project schema version. This app reads version 1 only.');
-  if(!Number.isSafeInteger(data.revision)||data.revision<0)throw Error('Invalid project revision.');
-  const document=normalizeDocument({name:data.name,parts:data.parts,settings:data.settings,placements:data.placements},true);
+  const data=JSON.parse(text) as any;
+  if(!data||typeof data.schemaVersion!=='number')throw Error('Invalid project: missing schemaVersion.');
+
+  // Handle v1 migration
+  if (data.schemaVersion === 1) {
+    const v1 = data as LegacyV1Project;
+    if(!Number.isSafeInteger(v1.revision)||v1.revision<0)throw Error('Invalid project revision.');
+    const { document, warnings } = migrateFromV1(v1);
+    try {
+      const normalized = normalizeDocument(document, true);
+      return { document: normalized, warnings, replace: true };
+    } catch (error) {
+      // Migration succeeded but normalization failed - return degraded state
+      warnings.push(`Migration warning: ${error instanceof Error ? error.message : String(error)}. Project opened in degraded state; some features may not work.`);
+      return { document, warnings, replace: true };
+    }
+  }
+
+  // Handle v2 (current)
+  if (data.schemaVersion !== 2) throw Error(`Unsupported project schema version ${data.schemaVersion}. This app reads versions 1 and 2 only.`);
+
+  const project = data as Project;
+  if(!Number.isSafeInteger(project.revision)||project.revision<0)throw Error('Invalid project revision.');
+  const document=normalizeDocument({name:project.name,parts:project.parts,settings:project.settings,placements:project.placements},true);
   const warnings:string[]=[];let result:Result|undefined;
-  if(data.result!==undefined) {
+  if(project.result!==undefined) {
     try {
       if(!document.parts.length)throw Error('Empty projects cannot contain a layout.');
-      const saved=data.result;
-      if(!saved||saved.documentRevision!==data.revision||typeof saved.solverRevision!=='string'||!/^[a-f0-9]{40}(?:\+[a-z0-9.-]{1,64})?$/i.test(saved.solverRevision)||typeof saved.seed!=='string'||!/^\d{1,20}$/.test(saved.seed)||BigInt(saved.seed)>2n**64n-1n||!Number.isFinite(saved.elapsedSeconds)||saved.elapsedSeconds<0)throw Error('Invalid or mismatched result provenance.');
+      const saved=project.result;
+      if(!saved||saved.documentRevision!==project.revision||typeof saved.solverRevision!=='string'||!/^[a-f0-9]{40}(?:\+[a-z0-9.-]{1,64})?$/i.test(saved.solverRevision)||typeof saved.seed!=='string'||!/^\d{1,20}$/.test(saved.seed)||BigInt(saved.seed)>2n**64n-1n||!Number.isFinite(saved.elapsedSeconds)||saved.elapsedSeconds<0)throw Error('Invalid or mismatched result provenance.');
       // A stored badge has no authority. Check the placements against this file's
       // normalized geometry and the current numeric policy in the worker.
       const candidate:Result={documentRevision:saved.documentRevision,solverRevision:saved.solverRevision,seed:saved.seed,elapsedSeconds:saved.elapsedSeconds,usedLengthMm:saved.usedLengthMm,placements:saved.placements,validation:saved.validation};
       const validation=validate(document,candidate);
       if(validation.status!=='passed')throw Error(validation.errors.join(' '));
-      if(data.placements!==undefined) {
+      if(project.placements!==undefined) {
         const draft=documentPlacements(document),checked=new Map(candidate.placements.map(placement=>[placementKey(placement),placement]));
         if(draft.length!==checked.size||draft.some(placement=>!samePlacement(placement,checked.get(placementKey(placement))))) throw Error('Saved result does not match the explicit copy positions in this project.');
       }
@@ -39,7 +145,7 @@ export function exportProject(document:Document,revision:number,result?:Result):
     result={...result,validation:validate(doc,result)};
     if(result.validation.status!=='passed')throw Error(`Saved layout failed validation: ${result.validation.errors.join(' ')}`);
   }
-  const text=JSON.stringify({...doc,schemaVersion:1,revision,...(result?{result}: {})} satisfies Project,null,2);
+  const text=JSON.stringify({...doc,schemaVersion:2,revision,...(result?{result}: {})} satisfies Project,null,2);
   if(new Blob([text]).size>10*1024*1024)throw Error('Project exceeds the 10 MiB file limit. Reduce geometry or metadata before saving.');
   const checked=importProject(text);
   if(result&&!checked.result)throw Error(checked.warnings.join(' '));

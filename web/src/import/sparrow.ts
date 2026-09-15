@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, newPart, type Document, type Part, type Ring } from '../model';
+import { DEFAULT_SETTINGS, newPart, rotationAngles, type Document, type Part, type Ring } from '../model';
 import { bounds, normalizeDocument, normalizeRing } from '../geometry/normalize';
 
 export type ImportReview = { document: Document; warnings: string[]; replace: boolean; issues?:string[]; layers?:string[]; result?:import('../model').Result };
@@ -41,10 +41,16 @@ export function importSparrow(text: string,fileName: string,scale: number): Impo
     if(orientations!==undefined && orientations!==null && (!Array.isArray(orientations) || !orientations.length || !orientations.every(a=>typeof a==='number' && Number.isFinite(a)))) throw Error(`Item ${id}: allowed_orientations must be omitted for free rotation or a nonempty degree list.`);
     return localize({...newPart(outer,`Part ${id}`),holes,quantity:number(item.demand),
       source:{format:'sparrow',fileName,entityId:String(id)},
-      rotations: orientations==null?{kind:'continuous'}:{kind:'discrete',degrees:orientations as number[]},
+      rotations: orientations==null
+        ? { mode: 'incremental', stepDegrees: 15, allowMirror: false, grainLocked: false }
+        : { mode: 'fixed', allowedAnglesDegrees: orientations as number[], allowMirror: false, grainLocked: false },
       preparationPosition:[index*50,0]});
   });
-  return {document:normalizeDocument({name:input.name,parts,settings:{...DEFAULT_SETTINGS,materialWidthMm:number(input.strip_height)*scale}}),
+  return {document:normalizeDocument({name:input.name,parts,settings:{
+      ...DEFAULT_SETTINGS,
+      materialWidthMm:number(input.strip_height)*scale,
+      sheetHeightMm: 2440  // Default for imported sparrow files
+    }}),
     replace:false,warnings:[...(input.solution!==undefined?['Stored native solution is ignored; warm starts are not supported.']:[]),
       `One coordinate unit = ${scale} mm. Benchmark coordinates have no intrinsic manufacturing units.`,
       ...(parts.some(p=>p.holes.length)?['Holes are preserved; nesting inside holes is not supported.']:[])]};
@@ -52,7 +58,8 @@ export function importSparrow(text: string,fileName: string,scale: number): Impo
 export function solverInput(doc: Document): string {
   if(!doc.parts.some(part=>part.quantity>0))throw Error('Add at least one copy before nesting.');
   return JSON.stringify({name:doc.name,strip_height:doc.settings.materialWidthMm,items:doc.parts.filter(part=>part.quantity>0).map((p,id)=>({
-    id,demand:p.quantity,allowed_orientations:p.rotations.kind==='continuous'?undefined:p.rotations.degrees,
+    id,demand:p.quantity,
+    allowed_orientations: rotationAngles(p.rotations),
     shape:{type:'simple_polygon',data:p.outer},
   }))});
 }

@@ -1,0 +1,104 @@
+# Schema v2 Migration Status
+
+## Completed ✅
+
+1. **model.ts** - Updated with v2 types:
+   - Added `RotationConfig` replacing `RotationRule`
+   - Added `MachineType` = 'router' | 'laser'
+   - Updated `Settings` with `sheetHeightMm`, `machineType`, `partClearanceMm`, `edgeMarginMm`
+   - Updated `Project` schemaVersion to 2
+   - Added `rotationAngles()` and `rotationSummary()` helpers
+
+2. **import/project.ts** - Migration logic:
+   - Added v1→v2 migration in `importProject()`
+   - Migrates rotation format (discrete/continuous → new RotationConfig)
+   - Adds default `sheetHeightMm` (1220mm) with warning
+   - Heuristic machine type detection from clearance
+   - Maps `clearanceMm` → `partClearanceMm` + `edgeMarginMm`
+   - Discards v1 results (strip→sheet incompatible)
+   - Handles degraded state gracefully
+   - Updated `exportProject()` to use schemaVersion 2
+
+3. **import/sparrow.ts** - Updated for v2:
+   - Uses `rotationAngles()` in `solverInput()`
+   - Maps imported orientations to new RotationConfig format
+   - Adds default `sheetHeightMm` for imported files
+
+4. **geometry/normalize.ts** - Updated validation:
+   - Validates `RotationConfig` fields
+   - Validates `sheetHeightMm`, `machineType`, `partClearanceMm`, `edgeMarginMm`
+
+5. **geometry/validate.ts** - Updated validation:
+   - Uses `rotationAngles()` instead of accessing `.degrees`
+   - Uses `partClearanceMm` instead of `clearanceMm`
+
+6. **tests/migration.test.ts** - Comprehensive migration tests:
+   - v1→v2 migration with all fields
+   - Rotation format migration
+   - Machine type detection
+   - Result discarding
+   - Degraded state handling
+   - Hole footprint confirmation
+
+## Remaining Work 🚧
+
+### TypeScript Errors to Fix (36 errors):
+
+1. **App.tsx** (11 errors):
+   - Line 128: `RotationConfig` vs `RotationRule` mismatch
+   - Line 130, 403-405: `clearanceMm` possibly undefined
+   - Line 141: schemaVersion 1 vs 2 mismatch
+   - Line 423: RotationRule assignment issues
+
+2. **components/ShapeLibrary.tsx** (2 errors):
+   - Line 132: Accessing `.kind` and `.degrees` on `RotationConfig`
+
+3. **geometry/placements.ts** (9 errors):
+   - Lines 159-165: Rotation angle handling, accessing `.kind` and `.degrees`
+
+4. **import/library.ts** (1 error):
+   - Line 35: `clearanceMm` possibly undefined
+
+### Files That Need Updates:
+
+- `App.tsx` - Update to use new Settings and RotationConfig
+- `components/ShapeLibrary.tsx` - Update rotation handling
+- `geometry/placements.ts` - Update rotation angle extraction
+- `import/library.ts` - Handle optional `clearanceMm`
+- Any UI components that display/edit rotation settings
+- Any UI components that display/edit clearance settings
+
+## Hole Footprint Behavior ✅ Confirmed
+
+**Question:** When holes are omitted from solver input, does the solver reserve the full outer footprint?
+
+**Answer:** YES ✅
+
+- Current code sends `shape:{type:'simple_polygon',data:p.outer}` (no holes)
+- jagua-rs treats `simple_polygon` as a solid shape
+- Collision detection is against the filled outer contour
+- Parts cannot nest inside the outer boundary
+- This correctly reserves the full outer footprint (matches V1 spec requirement)
+
+**Evidence:**
+- `web/src/export/zip.ts:14` README states: "The native CLI importer accepts simple_polygon items and currently ignores hole contours, so its footprint contains each outer contour only"
+- jagua-rs ExtShape: `SimplePolygon` vs `Polygon` (with inner contours)
+- No part-in-hole nesting is possible with current simple_polygon approach
+
+## Next Steps
+
+1. Fix remaining TypeScript errors in App.tsx
+2. Fix ShapeLibrary.tsx rotation display
+3. Fix placements.ts rotation handling
+4. Fix library.ts clearance handling
+5. Run full test suite
+6. Update UI components for new Settings fields
+7. Test v1→v2 migration with real saved projects
+
+## Breaking Changes for Users
+
+1. **Saved projects:** V1 projects will migrate automatically with warnings
+2. **Results discarded:** Strip-packing results cannot be reinterpreted as sheet layouts
+3. **Default sheet height:** 1220mm assumed for migrated projects (user should verify)
+4. **Machine type:** Auto-detected from clearance (router if >1mm, else laser)
+5. **Continuous rotation:** Mapped to incremental 15° (cannot represent exactly)
