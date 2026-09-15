@@ -2,7 +2,7 @@ import RotationControl from './components/RotationControl';
 import {readRecovery,saveRecovery} from './storage/recovery';
 import {useDismissibleMenu} from './components/useDismissibleMenu';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_SETTINGS, POLICY, rotationSummary, type Document, type Part, type Point, type Result, type RotationRule } from './model';
+import { DEFAULT_SETTINGS, POLICY, rotationSummary, rotationAngles, type Document, type Part, type Point, type Result, type RotationConfig } from './model';
 import { bounds } from './geometry/normalize';
 import { netArea } from './geometry/validate';
 import { pathData } from './geometry/path';
@@ -22,7 +22,7 @@ import {copyRefsFor,documentPlacements,duplicateCopies,removeCopies,rotateToNext
 
 const emptyProject=(name='Untitled project'):Document=>({name,parts:[],settings:{...DEFAULT_SETTINGS}});
 type ProjectSwitch={document:Document;result?:Result;warnings?:string[];saved?:boolean;nest?:boolean};
-const rotationValue=(rule:RotationRule)=>rule.kind==='continuous'?'free':JSON.stringify([...new Set(rule.degrees.map(d=>((d%360)+360)%360))].sort((a,b)=>a-b));
+const rotationValue=(config:RotationConfig)=>JSON.stringify(rotationAngles(config).map(d=>((d%360)+360)%360).sort((a,b)=>a-b));
 const validQuantity=(n:number)=>Number.isInteger(n)&&n>=0&&n<=500;
 function download(name:string,text:BlobPart,type='application/json') {
   const url=URL.createObjectURL(new Blob([text],{type})),link=document.createElement('a');
@@ -127,14 +127,14 @@ export default function App({initialDocument=emptyProject(),initialError='',load
   const chosen=doc.parts.find(p=>p.id===selected[0]);
   const mixedRotations=chosen&&doc.parts.some(part=>selected.includes(part.id)&&rotationValue(part.rotations)!==rotationValue(chosen.rotations));
   const selectedBox=useMemo(()=>selectionBounds(canvasDocument,selected,selectedCopies),[canvasDocument,selected,selectedCopies]);
-  const invalidSettings=!sizeValid||!Number.isFinite(doc.settings.materialWidthMm)||doc.settings.materialWidthMm<=0||doc.settings.materialWidthMm>100_000||!Number.isFinite(doc.settings.clearanceMm)||doc.settings.clearanceMm<0||doc.settings.clearanceMm>=doc.settings.materialWidthMm||doc.parts.some(p=>!validQuantity(p.quantity))||doc.parts.reduce((n,p)=>n+p.quantity,0)>500;
+  const invalidSettings=!sizeValid||!Number.isFinite(doc.settings.materialWidthMm)||doc.settings.materialWidthMm<=0||doc.settings.materialWidthMm>100_000||!Number.isFinite(doc.settings.partClearanceMm)||doc.settings.partClearanceMm<0||doc.settings.partClearanceMm>=doc.settings.materialWidthMm||doc.parts.some(p=>!validQuantity(p.quantity))||doc.parts.reduce((n,p)=>n+p.quantity,0)>500;
   const recoveryResult=running?undefined:result;
   const browserSavePending=browserSaved?.document!==doc||browserSaved?.result!==recoveryResult||browserSaved?.revision!==revision;
   const browserSaveState=recoveryError?'error':!recoveryReady||loadingExample?'loading':invalidSettings||!!polygon?.length?'unsaved':browserSavePending?'saving':'saved';
   const browserSaveLabel={error:'Not saved in browser',loading:'Loading project…',unsaved:'Not saved in browser',saving:'Saving in browser…',saved:'Saved in browser'}[browserSaveState];
   useEffect(()=>{
     if(!recoveryReady||loadingExample||invalidSettings||!doc.name.trim())return;
-    const project={...doc,...(recoveryResult?{placements:recoveryResult.placements,result:recoveryResult}:{}),schemaVersion:1 as const,revision};
+    const project={...doc,...(recoveryResult?{placements:recoveryResult.placements,result:recoveryResult}:{}),schemaVersion:2 as const,revision};
     let written=false,active=true;
     const write=()=>{
       if(written)return;written=true;
@@ -400,9 +400,9 @@ export default function App({initialDocument=emptyProject(),initialError='',load
         <section className="settings"><h2>Material & run</h2>
           <label>Material width <span>{unit}</span><input data-undo-field type="number" min={0.001/factor} max={100000/factor} step="any" value={inputLength(doc.settings.materialWidthMm)} onFocus={()=>setMaterialWidthFocused(true)} onBlur={()=>setMaterialWidthFocused(false)} disabled={locked} onChange={e=>commit({...doc,settings:{...doc.settings,materialWidthMm:e.target.valueAsNumber*factor}},true,'material-width')}/></label>
           {(!Number.isFinite(doc.settings.materialWidthMm)||doc.settings.materialWidthMm<=0||doc.settings.materialWidthMm>100_000)&&<small role="alert" className="field-error">Enter a positive material width up to {length(100000)} {unit}.</small>}
-          <label>Clearance <span>{unit}</span><input data-undo-field type="number" min="0" step="any" value={inputLength(doc.settings.clearanceMm)} disabled={locked} onChange={e=>commit({...doc,settings:{...doc.settings,clearanceMm:e.target.valueAsNumber*factor}},true,'clearance')}/></label>
-          {doc.settings.clearanceMm>0&&<small>sparrow also reserves {length(doc.settings.clearanceMm)} {unit} at material edges. This is not cutting kerf.</small>}
-          {(!Number.isFinite(doc.settings.clearanceMm)||doc.settings.clearanceMm<0||doc.settings.clearanceMm>=doc.settings.materialWidthMm)&&<small role="alert" className="field-error">Enter zero or a positive clearance smaller than the material width.</small>}
+          <label>Clearance <span>{unit}</span><input data-undo-field type="number" min="0" step="any" value={inputLength(doc.settings.partClearanceMm)} disabled={locked} onChange={e=>commit({...doc,settings:{...doc.settings,clearanceMm:e.target.valueAsNumber*factor}},true,'clearance')}/></label>
+          {doc.settings.partClearanceMm>0&&<small>sparrow also reserves {length(doc.settings.partClearanceMm)} {unit} at material edges. This is not cutting kerf.</small>}
+          {(!Number.isFinite(doc.settings.partClearanceMm)||doc.settings.partClearanceMm<0||doc.settings.partClearanceMm>=doc.settings.materialWidthMm)&&<small role="alert" className="field-error">Enter zero or a positive clearance smaller than the material width.</small>}
           <label>Stop condition<select value={doc.settings.timeLimitSeconds??'auto'} disabled={locked} onChange={e=>commit({...doc,settings:{...doc.settings,timeLimitSeconds:e.target.value==='auto'?null:Number(e.target.value) as 10|30|60|120|300|600}},false)}><option value="auto">Automatic</option>{[10,30,60,120,300,600].map(s=><option value={s} key={s}>{s<60?`Up to ${s} seconds`:`Up to ${s/60} minute${s>60?'s':''}`}</option>)}</select></label>
           <details className="solver-options"><summary>Solver options</summary><label>Search preset<select disabled={locked} value={doc.settings.solverPreset??'standard'} aria-describedby="preset-description" onChange={e=>commit({...doc,settings:{...doc.settings,solverPreset:e.target.value as 'standard'|'fast'}},false)}><option value="standard">Standard</option><option value="fast">Fast</option></select></label><small id="preset-description">{doc.settings.solverPreset==='fast'?'Good layouts sooner. A greedier search that may miss the best final layout.':'A more thorough search for the best final layout.'}</small><label>Solver threads<select disabled={locked} value={threads} onChange={e=>setThreads(Number(e.target.value))}><option value={0}>Automatic</option>{[1,2,3].map(n=><option key={n} value={n}>{n}</option>)}</select></label>{solver.workers&&<small>Last initialized run: {solver.workers.actual} solver worker{solver.workers.actual===1?'':'s'}.{solver.workers.reason&&` ${solver.workers.reason}`}</small>}<small>{crossOriginIsolated?'Automatic leaves a core free, up to 3 threads.':'This browser session uses one thread.'}</small></details>
           <small>Stops automatically when the search stalls. You can stop at any time.</small>

@@ -1,4 +1,4 @@
-import { LIMITS, type Document, type Part, type Placement, type Point } from '../model';
+import { LIMITS, rotationAngles, type Document, type Part, type Placement, type Point } from '../model';
 import { bounds } from './normalize';
 import { preparationCopyOffset } from './gestures';
 
@@ -158,8 +158,8 @@ export function rotateToNextOrientation(document: Document, refs: CopyRef[]): Do
   const wanted=new Set(refs.map(placementKey));
   return updatePlacements(document,documentPlacements(document).filter(copy=>wanted.has(placementKey(copy))).map(copy=>{
     const part=document.parts.find(part=>part.id===copy.partId)!,current=((copy.angleDeg%360)+360)%360;
-    const allowed=part.rotations.kind==='discrete'?[...new Set(part.rotations.degrees.map(angle=>((angle%360)+360)%360))].sort((a,b)=>a-b):undefined;
-    const next=allowed?(allowed.find(angle=>angle>current+1e-7)??allowed[0]):current+90;
+    const allowed=[...new Set(rotationAngles(part.rotations).map(angle=>((angle%360)+360)%360))].sort((a,b)=>a-b);
+    const next=allowed.find(angle=>angle>current+1e-7)??allowed[0];
     if(Math.abs(next-current)<1e-7)return copy;
     const b=bounds(part.outer),x=(b[0]+b[2])/2,y=(b[1]+b[3])/2;
     const before=copy.angleDeg*Math.PI/180,after=next*Math.PI/180;

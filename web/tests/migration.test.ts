@@ -32,14 +32,14 @@ describe('v1 to v2 migration', () => {
   it('migrates v1 project with all required fields added', () => {
     const review = importProject(v1Project());
     expect(review.replace).toBe(true);
-    expect(review.warnings).toHaveLength(1);
-    expect(review.warnings[0]).toContain('Migrated from v1');
-    expect(review.warnings[0]).toContain('1220 mm');
+    expect(review.warnings).toHaveLength(2); // Machine type + sheet height warnings
+    expect(review.warnings.some(w => w.includes('Sheet height set to 1220 mm'))).toBe(true); // Capital S
+    expect(review.warnings.some(w => w.includes('Machine type set to \'router\''))).toBe(true);
 
     const doc = review.document;
     expect(doc.settings.materialWidthMm).toBe(2440);
     expect(doc.settings.sheetHeightMm).toBe(1220);
-    expect(doc.settings.machineType).toBe('router'); // clearance 3mm > 1mm
+    expect(doc.settings.machineType).toBe('router'); // Always defaults to router
     expect(doc.settings.partClearanceMm).toBe(3);
     expect(doc.settings.edgeMarginMm).toBe(5); // max(5, clearance)
   });
@@ -68,19 +68,19 @@ describe('v1 to v2 migration', () => {
     }
   });
 
-  it('detects machine type from clearance heuristic', () => {
-    // High clearance → router
-    const router = importProject(v1Project({ settings: { materialWidthMm: 2440, clearanceMm: 5, timeLimitSeconds: null } }));
-    expect(router.document.settings.machineType).toBe('router');
+  it('always defaults machine type to router with verification warning', () => {
+    // All v1 projects get router default, regardless of clearance
+    const high = importProject(v1Project({ settings: { materialWidthMm: 2440, clearanceMm: 5, timeLimitSeconds: null } }));
+    expect(high.document.settings.machineType).toBe('router');
+    expect(high.warnings.some(w => w.includes('Machine type set to \'router\''))).toBe(true);
+    expect(high.warnings.some(w => w.includes('Verify and change to \'laser\' if needed'))).toBe(true);
 
-    // Low clearance → laser
-    const laser = importProject(v1Project({ settings: { materialWidthMm: 2440, clearanceMm: 0.5, timeLimitSeconds: null } }));
-    expect(laser.document.settings.machineType).toBe('laser');
+    const low = importProject(v1Project({ settings: { materialWidthMm: 2440, clearanceMm: 0.5, timeLimitSeconds: null } }));
+    expect(low.document.settings.machineType).toBe('router');
 
-    // Zero clearance → laser
     const zero = importProject(v1Project({ settings: { materialWidthMm: 2440, clearanceMm: 0, timeLimitSeconds: null } }));
-    expect(zero.document.settings.machineType).toBe('laser');
-    expect(zero.document.settings.edgeMarginMm).toBe(0);
+    expect(zero.document.settings.machineType).toBe('router');
+    expect(zero.document.settings.edgeMarginMm).toBe(10); // Default edge margin
   });
 
   it('discards v1 result and explains why', () => {
@@ -114,8 +114,11 @@ describe('v1 to v2 migration', () => {
   it('handles missing sheetHeightMm with flagged default', () => {
     const review = importProject(v1Project());
     expect(review.document.settings.sheetHeightMm).toBe(1220);
-    expect(review.warnings[0]).toContain('sheet height set to 1220 mm');
-    expect(review.warnings[0]).toContain('standard 2440×1220');
+    const sheetWarning = review.warnings.find(w => w.toLowerCase().includes('sheet height'));
+    expect(sheetWarning).toBeDefined();
+    expect(sheetWarning).toContain('1220 mm');
+    expect(sheetWarning).toContain('2440×1220');
+    expect(sheetWarning).toContain('Verify');
   });
 
   it('opens project in degraded state when normalization fails but migration succeeds', () => {

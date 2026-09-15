@@ -30,9 +30,10 @@ type LegacyV1Project = {
 };
 
 /** Migrate v1 rotation format to v2 */
-function migrateRotation(legacy: RotationRule): RotationConfig {
+function migrateRotation(legacy: RotationRule, partName: string, warnings: string[]): RotationConfig {
   if (legacy.kind === 'continuous') {
-    // Continuous rotation cannot be represented exactly; map to incremental 15°
+    // Continuous rotation cannot be represented exactly
+    warnings.push(`Part "${partName}": continuous rotation mapped to 15° increments (24 angles). Original continuous rotation is not representable in v2 schema.`);
     return { mode: 'incremental', stepDegrees: 15, allowMirror: false, grainLocked: false };
   }
   const degrees = [...new Set(legacy.degrees.map(d => ((d % 360) + 360) % 360))].sort((a,b) => a-b);
@@ -47,17 +48,17 @@ function migrateRotation(legacy: RotationRule): RotationConfig {
 function migrateFromV1(v1: LegacyV1Project): { document: Document; warnings: string[] } {
   const warnings: string[] = [];
 
-  // Detect machine type heuristically: if clearance > 1mm, likely router; else laser
-  const machineType: MachineType = v1.settings.clearanceMm > 1 ? 'router' : 'laser';
+  // Machine type defaults to router - user must verify
+  const machineType: MachineType = 'router';
+  warnings.push(`Machine type set to 'router' (default). Verify and change to 'laser' if needed - this affects kerf and clearance defaults.`);
 
   // Default sheet height - standard 2440×1220 sheet
   const sheetHeightMm = 1220;
-  warnings.push(`Migrated from v1: sheet height set to ${sheetHeightMm} mm (standard 2440×1220 sheet). Strip width (${v1.settings.materialWidthMm} mm) preserved as sheet width.`);
+  warnings.push(`Sheet height set to ${sheetHeightMm} mm (standard 2440×1220 sheet). Strip width (${v1.settings.materialWidthMm} mm) preserved as sheet width. Verify sheet dimensions before nesting.`);
 
   // Map clearance to part clearance and edge margin
-  // Heuristic: if clearance is 0, use minimal margins; else split between part and edge
   const partClearanceMm = v1.settings.clearanceMm;
-  const edgeMarginMm = v1.settings.clearanceMm > 0 ? Math.max(5, v1.settings.clearanceMm) : 0;
+  const edgeMarginMm = v1.settings.clearanceMm > 0 ? Math.max(5, v1.settings.clearanceMm) : 10;
 
   const settings = {
     solverPreset: v1.settings.solverPreset,
@@ -77,7 +78,7 @@ function migrateFromV1(v1: LegacyV1Project): { document: Document; warnings: str
     holes: p.holes,
     approximationToleranceMm: p.approximationToleranceMm,
     quantity: p.quantity,
-    rotations: migrateRotation(p.rotations),
+    rotations: migrateRotation(p.rotations, p.name, warnings),
     preparationPosition: p.preparationPosition,
   }));
 

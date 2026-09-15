@@ -32,7 +32,7 @@ function normalizeSourceDocument(document:Document,factor:number,resetQuantity=f
   });
   const placements=document.placements?.map(placement=>({...placement,xMm:placement.xMm*factor,yMm:placement.yMm*factor}));
   return normalizeDocument({...document,parts,
-    settings:{...document.settings,materialWidthMm:document.settings.materialWidthMm*factor,clearanceMm:document.settings.clearanceMm*factor},
+    settings:{...document.settings,materialWidthMm:document.settings.materialWidthMm*factor,sheetHeightMm:document.settings.sheetHeightMm*factor,partClearanceMm:document.settings.partClearanceMm*factor,edgeMarginMm:document.settings.edgeMarginMm*factor},
     placements,
   });
 }
