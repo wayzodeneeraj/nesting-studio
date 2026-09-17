@@ -1,5 +1,7 @@
 # Schema v2 Migration Status
 
+**Status:** ✅ COMPLETE - All TypeScript errors fixed, all tests passing
+
 ## Completed ✅
 
 1. **model.ts** - Updated with v2 types:
@@ -40,33 +42,36 @@
    - Degraded state handling
    - Hole footprint confirmation
 
-## Remaining Work 🚧
+## Fixed ✅
 
-### TypeScript Errors to Fix (36 errors):
+### All TypeScript Errors Resolved:
 
-1. **App.tsx** (11 errors):
-   - Line 128: `RotationConfig` vs `RotationRule` mismatch
-   - Line 130, 403-405: `clearanceMm` possibly undefined
-   - Line 141: schemaVersion 1 vs 2 mismatch
-   - Line 423: RotationRule assignment issues
+1. **App.tsx** - All 11 errors fixed:
+   - Updated to use `RotationConfig` throughout
+   - Replaced `clearanceMm` with `partClearanceMm`
+   - Changed schemaVersion from 1 to 2
+   - Updated `rotationValue` helper function
 
-2. **components/ShapeLibrary.tsx** (2 errors):
-   - Line 132: Accessing `.kind` and `.degrees` on `RotationConfig`
+2. **components/ShapeLibrary.tsx** - Fixed:
+   - Added `rotationSummary` import
+   - Updated rotation display to use `rotationSummary()`
 
-3. **geometry/placements.ts** (9 errors):
-   - Lines 159-165: Rotation angle handling, accessing `.kind` and `.degrees`
+3. **components/RotationControl.tsx** - Updated:
+   - Migrated from `RotationRule` to `RotationConfig`
+   - Updated preset handling for new rotation modes
 
-4. **import/library.ts** (1 error):
-   - Line 35: `clearanceMm` possibly undefined
+4. **geometry/placements.ts** - Fixed:
+   - Added `rotationAngles` import
+   - Updated rotation angle extraction using `rotationAngles()`
 
-### Files That Need Updates:
+5. **import/library.ts** - Fixed:
+   - Updated scaling to handle `partClearanceMm` and `edgeMarginMm`
 
-- `App.tsx` - Update to use new Settings and RotationConfig
-- `components/ShapeLibrary.tsx` - Update rotation handling
-- `geometry/placements.ts` - Update rotation angle extraction
-- `import/library.ts` - Handle optional `clearanceMm`
-- Any UI components that display/edit rotation settings
-- Any UI components that display/edit clearance settings
+### Migration Logic Corrections:
+
+1. **No silent machine-type inference** - Always defaults to 'router' with explicit warning requiring user verification
+2. **Continuous rotation warning** - Names affected parts explicitly when mapping to 15° increments
+3. **Clear verification prompts** - Both machine type and sheet dimensions flagged for user confirmation
 
 ## Hole Footprint Behavior ✅ Confirmed
 

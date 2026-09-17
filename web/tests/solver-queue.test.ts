@@ -23,7 +23,7 @@ class WorkerStub {
   deliver(data:SolverMessage|GeometryReply){this.onmessage?.({data});}
 }
 function render(){hooks.cursor=0;const result=useSolver();for(const effect of hooks.effects.splice(0)){const cleanup=effect();if(cleanup)hooks.cleanups.push(cleanup);}return result;}
-const doc:Document={...example(),parts:[{...newPart([[0,0],[10,0],[10,10],[0,10]]),id:'part',quantity:1}],settings:{materialWidthMm:20,clearanceMm:0,timeLimitSeconds:120}};
+const doc:Document={...example(),parts:[{...newPart([[0,0],[10,0],[10,10],[0,10]]),id:'part',quantity:1}],settings:{materialWidthMm:20,sheetHeightMm:20,machineType:'router',partClearanceMm:0,edgeMarginMm:0,timeLimitSeconds:120}};
 function candidate(runId:number,documentRevision:number,sequence:number,length:number):SolverMessage {
   return {type:'candidate',runId,documentRevision,sequence,report:'ExplFeas',elapsedMs:sequence*100,solution:{strip_width:length,layout:{placed_items:[{item_id:0,transformation:{rotation:0,translation:[0,0]}}]}}};
 }

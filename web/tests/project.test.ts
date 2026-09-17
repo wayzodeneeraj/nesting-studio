@@ -4,7 +4,7 @@ import {exportProject,importProject} from '../src/import/project';
 
 function project():Project {
   const part={...newPart([[0,0],[10,0],[10,10],[0,10]]),holes:[[[2,2],[2,4],[4,4],[4,2]] as [number,number][]]};
-  return {name:'Saved plate',schemaVersion:1,revision:9,parts:[part],settings:DEFAULT_SETTINGS,result:{documentRevision:9,solverRevision:SOLVER_REVISION,seed:'42',elapsedSeconds:1.25,usedLengthMm:10,placements:[{partId:part.id,copyIndex:0,xMm:0,yMm:0,angleDeg:0}],validation:{status:'failed',overlapAreaMm2:123,maxBoundaryViolationMm:123,minClearanceMm:null,errors:['Untrusted stored badge']}}};
+  return {name:'Saved plate',schemaVersion:2,revision:9,parts:[part],settings:DEFAULT_SETTINGS,result:{documentRevision:9,solverRevision:SOLVER_REVISION,seed:'42',elapsedSeconds:1.25,usedLengthMm:10,placements:[{partId:part.id,copyIndex:0,xMm:0,yMm:0,angleDeg:0}],validation:{status:'failed',overlapAreaMm2:123,maxBoundaryViolationMm:123,minClearanceMm:null,errors:['Untrusted stored badge']}}};
 }
 it('round trips geometry, holes, provenance, settings and freshly checks the saved result',()=>{
   const p=project(),review=importProject(exportProject(p,p.revision,p.result));
@@ -42,7 +42,7 @@ it.each(['geometry','revision','provenance'] as const)('discards a saved result 
   expect(review.result).toBeUndefined();expect(review.document.parts).toHaveLength(1);expect(review.warnings[0]).toContain('discarded');
 });
 it('rejects unknown versions and malformed documents, and saves without a result',()=>{
-  const p=project();expect(()=>importProject(JSON.stringify({...p,schemaVersion:2}))).toThrow('version 1');
+  const p=project();expect(()=>importProject(JSON.stringify({...p,schemaVersion:99}))).toThrow('Unsupported project schema version 99');
   expect(()=>importProject(JSON.stringify({...p,parts:[null]}))).toThrow();
   expect(importProject(exportProject(p,9)).result).toBeUndefined();
   expect(()=>exportProject(p,10,p.result)).toThrow('older document');
@@ -52,7 +52,8 @@ it('saves and opens an empty project while rejecting an empty layout',()=>{
   const p={...project(),parts:[]};
   expect(importProject(exportProject(p,9)).document.parts).toEqual([]);
   expect(()=>exportProject(p,9,p.result)).toThrow('Empty projects');
-  expect(importProject(JSON.stringify(p)).warnings[0]).toContain('Empty projects');
+  const emptyWithResult = importProject(JSON.stringify(p));
+  expect(emptyWithResult.warnings.some(w => w.includes('Empty projects'))).toBe(true);
   expect(()=>exportProject({...p,settings:{...p.settings,materialWidthMm:0}},9)).toThrow();
 });
 

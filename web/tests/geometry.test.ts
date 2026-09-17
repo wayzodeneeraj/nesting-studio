@@ -10,7 +10,7 @@ import { bounds } from '../src/geometry/normalize';
 
 function fixture() {
   const part={...newPart([[0,0],[1,0],[1,1],[0,1]]),id:'square',quantity:2};
-  const doc:Document={name:'test',parts:[part],settings:{...DEFAULT_SETTINGS,materialWidthMm:2}};
+  const doc:Document={name:'test',parts:[part],settings:{...DEFAULT_SETTINGS,materialWidthMm:2,partClearanceMm:0,edgeMarginMm:0}};
   const result:Result={documentRevision:1,solverRevision:'test',seed:'42',elapsedSeconds:1,usedLengthMm:2,
     placements:[{partId:part.id,copyIndex:0,xMm:0,yMm:0,angleDeg:0},{partId:part.id,copyIndex:1,xMm:1,yMm:0,angleDeg:0}],
     validation:{status:'pending',overlapAreaMm2:0,maxBoundaryViolationMm:0,minClearanceMm:null,errors:[]}};
@@ -78,7 +78,7 @@ describe('independent layout validation',()=>{
     expect(validate(doc,result).status).toBe('failed');
   });
   it('measures clearance without doubling it',()=>{
-    const {doc,result}=fixture();result.usedLengthMm=3;result.placements[1].xMm=2;doc.settings.clearanceMm=1;
+    const {doc,result}=fixture();result.usedLengthMm=3;result.placements[1].xMm=2;doc.settings.partClearanceMm=1;
     expect(validate(doc,result)).toMatchObject({status:'passed',minClearanceMm:1});
     result.placements[1].xMm=1.9;expect(validate(doc,result).status).toBe('failed');
   });
@@ -90,7 +90,9 @@ describe('independent layout validation',()=>{
 it('JSON preserves rotation semantics, scales geometry and rejects empty orientations',()=>{
   const data={name:'input',strip_height:10,items:[{id:19,demand:2,shape:{type:'rectangle',data:{x_min:10,y_min:20,width:1,height:2}}}]};
   const part=importSparrow(JSON.stringify(data),'input.json',25.4).document.parts[0];
-  expect(part.rotations).toEqual({kind:'continuous'});expect(part.outer[2][0]).toBeCloseTo(25.4);expect(part.outer[2][1]).toBeCloseTo(50.8);
+  // v2 schema: continuous rotation is migrated to incremental 15° steps
+  expect(part.rotations).toEqual({mode:'incremental',stepDegrees:15,allowMirror:false,grainLocked:false});
+  expect(part.outer[2][0]).toBeCloseTo(25.4);expect(part.outer[2][1]).toBeCloseTo(50.8);
   Object.assign(data.items[0],{allowed_orientations:[]});expect(()=>importSparrow(JSON.stringify(data),'input.json',1)).toThrow('nonempty');
 });
 

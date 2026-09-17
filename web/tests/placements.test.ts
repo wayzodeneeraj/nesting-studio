@@ -52,11 +52,14 @@ it('R cycles discrete allowed orientations and uses quarter turns for free rotat
   let doc=withDocumentPlacements(source());const ref={partId:'plate',copyIndex:0};
   doc=rotateToNextOrientation(doc,[ref]);expect(doc.placements![0].angleDeg).toBe(180);
   doc=rotateToNextOrientation(doc,[ref]);expect(doc.placements![0].angleDeg).toBe(0);
-  doc={...doc,parts:doc.parts.map(part=>({...part,rotations:{kind:'discrete',degrees:[270,30,120]}}))};
+  // v2 schema: explicit angles via allowedAnglesDegrees
+  doc={...doc,parts:doc.parts.map(part=>({...part,rotations:{mode:'fixed',allowedAnglesDegrees:[270,30,120],allowMirror:false,grainLocked:false}}))};
   for(const angle of [30,120,270,30]){doc=rotateToNextOrientation(doc,[ref]);expect(doc.placements![0].angleDeg).toBe(angle);}
-  doc={...doc,parts:doc.parts.map(part=>({...part,rotations:{kind:'continuous'}}))};
-  doc=rotateToNextOrientation(doc,[ref]);expect(doc.placements![0].angleDeg).toBe(120);
-  expect(doc.placements![1].angleDeg).toBe(0);
+  // v2 schema: incremental rotation (replaces v1 continuous, tests 15° steps)
+  doc={...doc,parts:doc.parts.map(part=>({...part,rotations:{mode:'incremental',stepDegrees:15,allowMirror:false,grainLocked:false}}))};
+  doc=rotateToNextOrientation(doc,[ref]);expect(doc.placements![0].angleDeg).toBe(45); // from 30 → next is 45 (15° step)
+  doc=rotateToNextOrientation(doc,[ref]);expect(doc.placements![0].angleDeg).toBe(60); // 45 → 60
+  expect(doc.placements![1].angleDeg).toBe(0); // second copy unchanged
 });
 
 it('zero-demand types stay in the project but solver IDs remain dense and map back correctly',()=>{
