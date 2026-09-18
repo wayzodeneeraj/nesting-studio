@@ -13,7 +13,6 @@ import type { ImportReview } from './import/sparrow';
 import Workspace,{colors} from './components/Workspace';
 import Modal from './components/Modal';
 import SelectionControls from './components/SelectionControls';
-import ShapeLibrary from './components/ShapeLibrary';
 import ExamplePicker from './components/ExamplePicker';
 import {displayLength,unitScale,type DisplayUnit} from './units';
 import {selectionBounds,type GeometryEdit} from './geometry/manipulate';
@@ -36,7 +35,7 @@ export default function App({initialDocument=emptyProject(),initialError='',load
   const [busy,setBusy]=useState(false),[error,setError]=useState(initialError);
   const [fitRequest,setFitRequest]=useState(0);
   const [resultMode,setResultMode]=useState<'live'|'checked'>('live');
-  const [threads,setThreads]=useState(0),[library,setLibrary]=useState(false),[examples,setExamples]=useState(false);
+  const [threads,setThreads]=useState(0),[examples,setExamples]=useState(false);
   const [sizeValid,setSizeValid]=useState(true),[downloadedResult,setDownloadedResult]=useState(false);
   const [theme,setTheme]=useState<'system'|'light'|'dark'>(()=>{try{const saved=localStorage.getItem('sparrow-theme');return saved==='light'||saved==='dark'||saved==='system'?saved:'system';}catch{return 'system';}});
   useEffect(()=>{document.documentElement.dataset.theme=theme;try{localStorage.setItem('sparrow-theme',theme);}catch{/* The theme still works when storage is unavailable. */}},[theme]);
@@ -50,7 +49,7 @@ export default function App({initialDocument=emptyProject(),initialError='',load
   const [layers,setLayers]=useState<string[]>(),[availableLayers,setAvailableLayers]=useState<string[]>([]),[excludeIssues,setExcludeIssues]=useState(false);
   const [previewStale,setPreviewStale]=useState(false);
   const [importWarnings,setImportWarnings]=useState<string[]>([]);
-  const [exportFormat,setExportFormat]=useState<'svg'|'dxf'|'pdf'>('svg');
+  const [exportFormat,setExportFormat]=useState<'svg'|'dxf'|'pdf'>('dxf');
   const [materialWidthFocused,setMaterialWidthFocused]=useState(false);
   const [nameDialog,setNameDialog]=useState<'new'|'rename'>(),[projectName,setProjectName]=useState('');
   const [pendingProject,setPendingProject]=useState<ProjectSwitch>();
@@ -338,7 +337,7 @@ export default function App({initialDocument=emptyProject(),initialError='',load
       download(`${exportName}.zip`,reply.archive,'application/zip');if(result)setDownloadedResult(true);setExported({document:doc,result});return true;
     }catch(e){setError(String(e));return false;}finally{setBusy(false);}
   }
-  const exportName='sparrow_studio_'+(doc.name.trim().replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').replace(/[. ]+$/g,'').slice(0,100)||'project');
+  const exportName='Woodaakar_Nesting_'+(doc.name.trim().replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').replace(/[. ]+$/g,'').slice(0,100)||'project');
   const maxApprox=useMemo(()=>Math.max(0,...doc.parts.map(p=>p.approximationToleranceMm)),[doc.parts]);
   const totalArea=useMemo(()=>doc.parts.reduce((n,p)=>n+netArea(p)*p.quantity,0),[doc.parts]);
   const utilization=result?totalArea/(doc.settings.materialWidthMm*result.usedLengthMm)*100:0;
@@ -394,14 +393,14 @@ export default function App({initialDocument=emptyProject(),initialError='',load
         </div>;})}</div>
         {doc.parts.reduce((n,p)=>n+(Number.isFinite(p.quantity)?p.quantity:0),0)>500&&<p role="alert" className="field-error quantity-total">This drawing exceeds the 500-copy limit. Reduce quantities to continue.</p>}
         {doc.parts.some(part=>part.quantity===0)&&<button className="text-button clear-unused" disabled={locked} onClick={()=>commit({...doc,parts:doc.parts.filter(part=>part.quantity!==0)})}>Remove zero-quantity parts</button>}
-        <div className="add-shape"><button disabled={locked} onClick={()=>setShape('rectangle')}>Draw shape</button><button disabled={locked} onClick={()=>input.current?.click()}>Import shapes</button><button disabled={locked} onClick={()=>setLibrary(true)}>Shape library</button></div>
-        <p className="import-formats">Import SVG, DXF or sparrow instance JSON.</p>
+        <div className="add-shape"><button disabled={locked} onClick={()=>setShape('rectangle')}>Draw shape</button><button disabled={locked} onClick={()=>input.current?.click()}>Import shapes</button></div>
+        <p className="import-formats">Import SVG or DXF.</p>
         <div className="row-actions history"><button disabled={locked||!history.current.length} onClick={()=>restore()}>Undo</button><button disabled={locked||!future.current.length} onClick={()=>restore(true)}>Redo</button></div>
         <section className="settings"><h2>Material & run</h2>
           <label>Material width <span>{unit}</span><input data-undo-field type="number" min={0.001/factor} max={100000/factor} step="any" value={inputLength(doc.settings.materialWidthMm)} onFocus={()=>setMaterialWidthFocused(true)} onBlur={()=>setMaterialWidthFocused(false)} disabled={locked} onChange={e=>commit({...doc,settings:{...doc.settings,materialWidthMm:e.target.valueAsNumber*factor}},true,'material-width')}/></label>
           {(!Number.isFinite(doc.settings.materialWidthMm)||doc.settings.materialWidthMm<=0||doc.settings.materialWidthMm>100_000)&&<small role="alert" className="field-error">Enter a positive material width up to {length(100000)} {unit}.</small>}
           <label>Clearance <span>{unit}</span><input data-undo-field type="number" min="0" step="any" value={inputLength(doc.settings.partClearanceMm)} disabled={locked} onChange={e=>commit({...doc,settings:{...doc.settings,clearanceMm:e.target.valueAsNumber*factor}},true,'clearance')}/></label>
-          {doc.settings.partClearanceMm>0&&<small>sparrow also reserves {length(doc.settings.partClearanceMm)} {unit} at material edges. This is not cutting kerf.</small>}
+          {doc.settings.partClearanceMm>0&&<small>Minimum gap between parts. This is not cutting kerf.</small>}
           {(!Number.isFinite(doc.settings.partClearanceMm)||doc.settings.partClearanceMm<0||doc.settings.partClearanceMm>=doc.settings.materialWidthMm)&&<small role="alert" className="field-error">Enter zero or a positive clearance smaller than the material width.</small>}
           <label>Stop condition<select value={doc.settings.timeLimitSeconds??'auto'} disabled={locked} onChange={e=>commit({...doc,settings:{...doc.settings,timeLimitSeconds:e.target.value==='auto'?null:Number(e.target.value) as 10|30|60|120|300|600}},false)}><option value="auto">Automatic</option>{[10,30,60,120,300,600].map(s=><option value={s} key={s}>{s<60?`Up to ${s} seconds`:`Up to ${s/60} minute${s>60?'s':''}`}</option>)}</select></label>
           <details className="solver-options"><summary>Solver options</summary><label>Search preset<select disabled={locked} value={doc.settings.solverPreset??'standard'} aria-describedby="preset-description" onChange={e=>commit({...doc,settings:{...doc.settings,solverPreset:e.target.value as 'standard'|'fast'}},false)}><option value="standard">Standard</option><option value="fast">Fast</option></select></label><small id="preset-description">{doc.settings.solverPreset==='fast'?'Good layouts sooner. A greedier search that may miss the best final layout.':'A more thorough search for the best final layout.'}</small><label>Solver threads<select disabled={locked} value={threads} onChange={e=>setThreads(Number(e.target.value))}><option value={0}>Automatic</option>{[1,2,3].map(n=><option key={n} value={n}>{n}</option>)}</select></label>{solver.workers&&<small>Last initialized run: {solver.workers.actual} solver worker{solver.workers.actual===1?'':'s'}.{solver.workers.reason&&` ${solver.workers.reason}`}</small>}<small>{crossOriginIsolated?'Automatic leaves a core free, up to 3 threads.':'This browser session uses one thread.'}</small></details>
@@ -447,7 +446,6 @@ export default function App({initialDocument=emptyProject(),initialError='',load
       <div className="modal-actions"><button type="button" disabled={busy} onClick={()=>setShape(undefined)}>Cancel</button><button disabled={busy} className="primary">{shape==='polygon'?'Start drawing':'Add shape'}</button></div></form>
     </Modal>}
     {examples&&<ExamplePicker onClose={()=>setExamples(false)} onChoose={async(next,nest)=>{const document=await prepareDocument(next,[],true);setExamples(false);requestProject({document,nest});}}/>}
-    {library&&<ShapeLibrary unit={unit} selectedParts={doc.parts.filter(p=>selected.includes(p.id))} onClose={()=>setLibrary(false)} onAdd={async parts=>{setBusy(true);try{await addParts(parts);}finally{setBusy(false);}}}/>}
     {nameDialog&&<Modal title={nameDialog==='new'?'New project':'Rename project'} onClose={()=>setNameDialog(undefined)}><form onSubmit={e=>{e.preventDefault();const name=projectName.trim();if(!name)return;if(nameDialog==='new')requestProject({document:emptyProject(name),saved:true});else if(name!==doc.name)commit({...doc,name},false);setNameDialog(undefined);}}><label>Project name<input autoFocus onFocus={e=>e.currentTarget.select()} required maxLength={200} value={projectName} onChange={e=>setProjectName(e.target.value)}/></label><div className="modal-actions"><button type="button" onClick={()=>setNameDialog(undefined)}>Cancel</button><button className="primary" disabled={!projectName.trim()}>{nameDialog==='new'?'Create project':'Rename'}</button></div></form></Modal>}
     {pendingProject&&<Modal title="Save a copy before switching?" locked={busy} onClose={()=>setPendingProject(undefined)}><p>Opening <strong>{pendingProject.document.name}</strong> will replace <strong>{doc.name}</strong> in this browser.</p><p className="muted">Download a project file to keep a copy of <strong>{doc.name}</strong>. You can open it again later.</p>{polygon&&<p>Finish or cancel the polygon before exporting, or discard it to continue.</p>}{error&&<p role="alert" className="field-error">{error}</p>}<div className="project-switch-actions"><button className="primary" disabled={busy||invalidSettings||!!polygon} onClick={async()=>{if(await exportProject())switchProject(pendingProject);}}>Download &amp; Switch</button><button className="discard-project" disabled={busy} onClick={()=>switchProject(pendingProject)}>Discard &amp; Switch</button><button className="text-button" disabled={busy} onClick={()=>setPendingProject(undefined)}>Cancel</button></div></Modal>}
     {info&&<Modal title={info==='diagnostics'?'Encountering issues?':info==='about'?'About Woodaakar Nesting':'Shortcuts & formats'} onClose={()=>setInfo(undefined)}>
