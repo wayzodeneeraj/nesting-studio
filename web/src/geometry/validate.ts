@@ -7,9 +7,9 @@ export const transform = (ring: Ring, p: Placement): Ring => {
   const angle = p.angleDeg * Math.PI / 180, c = Math.cos(angle), s = Math.sin(angle);
   return ring.map(([x,y]) => [x*c-y*s+p.xMm, x*s+y*c+p.yMm]);
 };
-export function worldParts(doc: Document, result: Pick<Result,'placements'>): WorldPart[] {
+export function worldParts(doc: Document, placements: import('../model').Placement[]): WorldPart[] {
   const parts = new Map(doc.parts.map(p => [p.id,p]));
-  return result.placements.map(p => {
+  return placements.map(p => {
     const part = parts.get(p.partId);
     if (!part) throw Error(`Unknown part ${p.partId}.`);
     return { partId: p.partId, copyIndex: p.copyIndex, outer: transform(part.outer,p), holes: part.holes.map(h=>transform(h,p)) };
@@ -33,11 +33,12 @@ export function validate(doc: Document, result: Result, serialized?: WorldPart[]
   const v: Validation = { status:'failed', overlapAreaMm2:0, maxBoundaryViolationMm:0, minClearanceMm:null, errors:[] };
   try {
     doc=normalizeDocument(doc);
-    if(!Number.isFinite(result.usedLengthMm) || result.usedLengthMm<=0 || result.usedLengthMm>LIMITS.extent) throw Error('Used length must be finite, positive, and at most 100,000 mm.');
-    if(!Array.isArray(result.placements) || result.placements.length!==doc.parts.reduce((n,p)=>n+p.quantity,0)) throw Error('Layout does not contain exactly the demanded copies.');
+    if(!Array.isArray(result.sheets) || result.sheets.length===0) throw Error('Result must contain at least one sheet.');
+    const allPlacements = result.sheets.flatMap(sheet => sheet.placements);
+    if(allPlacements.length!==doc.parts.reduce((n,p)=>n+p.quantity,0)) throw Error('Layout does not contain exactly the demanded copies.');
     const parts=new Map(doc.parts.map(p=>[p.id,p]));
     const seen=new Set<string>();
-    for(const p of result.placements) {
+    for(const p of allPlacements) {
       const part=parts.get(p.partId);
       if(!part || !Number.isInteger(p.copyIndex) || p.copyIndex<0 || p.copyIndex>=part.quantity) throw Error('Unknown part or copy index.');
       if(Object.keys(p).some(k=>!['partId','copyIndex','xMm','yMm','angleDeg'].includes(k))) throw Error('Placements support rigid rotations and translations only.');
@@ -48,18 +49,19 @@ export function validate(doc: Document, result: Result, serialized?: WorldPart[]
       const allowed=rotationAngles(part.rotations).map(a=>((a%360)+360)%360);
       if(!allowed.some(a=>Math.abs(((p.angleDeg-a)%360+540)%360-180)<=POLICY.angleDeg)) throw Error(`Disallowed rotation for ${part.name}.`);
     }
-    const expected=worldParts(doc,result),world=serialized ?? expected;
-    if(world.length!==result.placements.length) throw Error('Serialized contour count differs from the layout.');
+    const expected=worldParts(doc,allPlacements),world=serialized ?? expected;
+    if(world.length!==allPlacements.length) throw Error('Serialized contour count differs from the layout.');
     const boxes=world.map((p,i)=>{
       const original=parts.get(p.partId);
-      if(!original || p.partId!==result.placements[i].partId || p.copyIndex!==result.placements[i].copyIndex || p.holes.length!==original.holes.length) throw Error('Serialized part or hole identity differs from the layout.');
+      if(!original || p.partId!==allPlacements[i].partId || p.copyIndex!==allPlacements[i].copyIndex || p.holes.length!==original.holes.length) throw Error('Serialized part or hole identity differs from the layout.');
       if(serialized) {
         const expectedRings=[expected[i].outer,...expected[i].holes];
         if([p.outer,...p.holes].some((ring,j)=>ring.length!==expectedRings[j].length||ring.some((point,k)=>point.length!==2||point.some((coordinate,axis)=>coordinate!==expectedRings[j][k][axis]))))throw Error('Serialized contours differ from the rigidly transformed input geometry.');
       }
       normalizePart({...original,outer:p.outer,holes:p.holes});
       const b=bounds(p.outer);
-      v.maxBoundaryViolationMm=Math.max(v.maxBoundaryViolationMm,-b[0],-b[1],b[2]-result.usedLengthMm,b[3]-doc.settings.materialWidthMm);
+      // WP1: Check against sheet boundaries (materialWidth × sheetHeight)
+      v.maxBoundaryViolationMm=Math.max(v.maxBoundaryViolationMm,-b[0],-b[1],b[2]-doc.settings.materialWidthMm,b[3]-doc.settings.sheetHeightMm);
       return b;
     });
     if(v.maxBoundaryViolationMm>POLICY.linearMm) v.errors.push(`Material boundary exceeded by ${v.maxBoundaryViolationMm} mm.`);

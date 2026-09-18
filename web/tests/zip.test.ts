@@ -43,8 +43,9 @@ it('writes deterministic UTF-8 store archives with safe relative names', () => {
 function fixture(): { document: Document; result: Result } {
   const part = { ...newPart([[0, 0], [10, 0], [10, 10], [0, 10]]), id: 'holed', holes: [[[2, 2], [2, 4], [4, 4], [4, 2]] as [number, number][]] };
   const document = normalizeDocument({ name: 'Archive plate', parts: [part], settings: { ...DEFAULT_SETTINGS, materialWidthMm: 20 } });
-  const result: Result = { documentRevision: 7, solverRevision: SOLVER_REVISION, seed: '42', elapsedSeconds: 1, usedLengthMm: 10,
-    placements: [{ partId: 'holed', copyIndex: 0, xMm: 0, yMm: 0, angleDeg: 0 }],
+  const placements = [{ partId: 'holed', copyIndex: 0, xMm: 0, yMm: 0, angleDeg: 0 }];
+  const result: Result = { documentRevision: 7, solverRevision: SOLVER_REVISION, seed: '42', elapsedSeconds: 1,
+    sheets: [{sheetIndex: 0, placements, utilization: 0}],
     validation: { status: 'pending', overlapAreaMm2: 0, maxBoundaryViolationMm: 0, minClearanceMm: null, errors: [] } };
   result.validation = validate(document, result);
   return { document, result };
@@ -58,7 +59,7 @@ it('packages project, checked outputs, hole-preserving exports, and dense CLI in
   expect([...complete.keys()]).toEqual(['project.sparrow-project.json', 'cli.json', 'README.txt', 'layout.svg', 'layout.dxf']);
   const project = JSON.parse(new TextDecoder().decode(complete.get('project.sparrow-project.json')));
   const instance = JSON.parse(new TextDecoder().decode(complete.get('cli.json')));
-  expect(project.result.placements).toHaveLength(1);
+  expect(project.result.sheets[0].placements).toHaveLength(1);
   expect(instance.items).toMatchObject([{ id: 0, demand: 1, shape: { type: 'simple_polygon' } }]);
   expect(new TextDecoder().decode(complete.get('README.txt'))).toContain('ignores hole contours');
   expect(new TextDecoder().decode(complete.get('layout.svg'))).toContain('fill-rule="evenodd"');

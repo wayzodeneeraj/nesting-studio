@@ -39,8 +39,9 @@ export type Placement = { partId: string; copyIndex: number; xMm: number; yMm: n
 export type Document = { name: string; parts: Part[]; settings: Settings; placements?: Placement[] };
 export type Validation = { status: 'pending' | 'passed' | 'failed'; overlapAreaMm2: number;
   maxBoundaryViolationMm: number; minClearanceMm: number | null; errors: string[] };
+export type SheetLayout = { sheetIndex: number; placements: Placement[]; utilization: number };
 export type Result = { documentRevision: number; solverRevision: string; seed: string;
-  elapsedSeconds: number; usedLengthMm: number; placements: Placement[]; validation: Validation };
+  elapsedSeconds: number; sheets: SheetLayout[]; validation: Validation };
 export type Project = Document & { schemaVersion: 2; revision: number; result?: Result };
 
 export const DEFAULT_SETTINGS: Settings = {

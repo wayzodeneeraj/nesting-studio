@@ -66,6 +66,6 @@ it('zero-demand types stay in the project but solver IDs remain dense and map ba
   const doc=source();doc.parts=[{...doc.parts[0],id:'hidden',quantity:0},{...doc.parts[0],id:'active',quantity:1}];
   expect(JSON.parse(solverInput(doc)).items.map((item:{id:number;demand:number})=>[item.id,item.demand])).toEqual([[0,1]]);
   const candidate={documentRevision:1,elapsedMs:10,solution:{strip_width:20,layout:{placed_items:[{item_id:0,transformation:{rotation:0,translation:[0,0]}}]}}} as Candidate;
-  expect(candidateResult(doc,candidate,'1').placements[0].partId).toBe('active');
+  expect(candidateResult(doc,candidate,'1').sheets[0].placements[0].partId).toBe('active');
   expect(()=>solverInput({...doc,parts:doc.parts.map(part=>({...part,quantity:0}))})).toThrow('at least one copy');
 });

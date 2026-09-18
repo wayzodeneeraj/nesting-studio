@@ -4,7 +4,8 @@ import {exportProject,importProject} from '../src/import/project';
 
 function project():Project {
   const part={...newPart([[0,0],[10,0],[10,10],[0,10]]),holes:[[[2,2],[2,4],[4,4],[4,2]] as [number,number][]]};
-  return {name:'Saved plate',schemaVersion:2,revision:9,parts:[part],settings:DEFAULT_SETTINGS,result:{documentRevision:9,solverRevision:SOLVER_REVISION,seed:'42',elapsedSeconds:1.25,usedLengthMm:10,placements:[{partId:part.id,copyIndex:0,xMm:0,yMm:0,angleDeg:0}],validation:{status:'failed',overlapAreaMm2:123,maxBoundaryViolationMm:123,minClearanceMm:null,errors:['Untrusted stored badge']}}};
+  const placements=[{partId:part.id,copyIndex:0,xMm:0,yMm:0,angleDeg:0}];
+  return {name:'Saved plate',schemaVersion:2,revision:9,parts:[part],settings:DEFAULT_SETTINGS,result:{documentRevision:9,solverRevision:SOLVER_REVISION,seed:'42',elapsedSeconds:1.25,sheets:[{sheetIndex:0,placements,utilization:0}],validation:{status:'failed',overlapAreaMm2:123,maxBoundaryViolationMm:123,minClearanceMm:null,errors:['Untrusted stored badge']}}};
 }
 it('round trips geometry, holes, provenance, settings and freshly checks the saved result',()=>{
   const p=project(),review=importProject(exportProject(p,p.revision,p.result));
@@ -26,7 +27,7 @@ it('discards a valid checked result that differs from explicit draft placements'
     {partId:part.id,copyIndex:0,xMm:30,yMm:20,angleDeg:0},
     {partId:part.id,copyIndex:1,xMm:60,yMm:40,angleDeg:0},
   ],checked=[draft[0],{...draft[1],xMm:80}];
-  const saved={...p,parts:[part],placements:draft,result:{...p.result!,usedLengthMm:100,placements:checked,validation:{status:'passed',overlapAreaMm2:0,maxBoundaryViolationMm:0,minClearanceMm:null,errors:[]}}};
+  const saved={...p,parts:[part],placements:draft,result:{...p.result!,sheets:[{sheetIndex:0,placements:checked,utilization:0}],validation:{status:'passed',overlapAreaMm2:0,maxBoundaryViolationMm:0,minClearanceMm:null,errors:[]}}};
   const review=importProject(JSON.stringify(saved));
   expect(review.result).toBeUndefined();
   expect(review.document.placements).toEqual(draft);
@@ -35,7 +36,7 @@ it('discards a valid checked result that differs from explicit draft placements'
 });
 it.each(['geometry','revision','provenance'] as const)('discards a saved result with invalid %s without losing parts',kind=>{
   const p=project();
-  if(kind==='geometry')p.result!.placements[0].xMm=-1;
+  if(kind==='geometry')p.result!.sheets[0].placements[0].xMm=-1;
   if(kind==='revision')p.result!.documentRevision=8;
   if(kind==='provenance')p.result!.seed='18446744073709551616';
   const review=importProject(JSON.stringify(p));

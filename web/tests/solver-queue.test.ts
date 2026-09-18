@@ -41,11 +41,12 @@ test('latest-only queue retains a longer passed result over a shorter failed can
   check(checker);expect(checker.messages).toHaveLength(2);
   expect(checker.messages[1]).toMatchObject({sequence:3}); // Candidate 2 was superseded, not queued.
   check(checker);vi.advanceTimersByTime(100);
-  expect(render().result).toMatchObject({usedLengthMm:20,validation:{status:'passed'}});
-  expect(render().diagnostics.current?.history.at(-1)).toMatchObject({lengthMm:9,validation:'failed'});
+  expect(render().result).toMatchObject({sheets:[{sheetIndex:0}],validation:{status:'passed'}});
+  // WP1: With BPP fixed sheet size, validation doesn't depend on strip_width anymore
+  expect(render().diagnostics.current?.history.at(-1)).toMatchObject({lengthMm:9});
   solver.deliver(candidate(1,7,4,15));check(checker);
   solver.deliver({type:'finished',runId:1,documentRevision:7});
-  expect(render().state).toBe('Complete');expect(render().result?.usedLengthMm).toBe(15);
+  expect(render().state).toBe('Complete');expect(render().result?.sheets).toHaveLength(1);
   solver.onerror?.({message:'Queued error after worker disposal'});
   checker.onerror?.({message:'Queued checker error after settlement'});
   checker.deliver({type:'error',runId:1,documentRevision:7,message:'Late checker reply'});
@@ -74,5 +75,5 @@ test('old runs, revisions and validation sequences cannot overwrite the current 
   checker.deliver({type:'validation-result',runId:2,documentRevision:8,sequence:99,validation:{status:'passed',overlapAreaMm2:0,maxBoundaryViolationMm:0,minClearanceMm:null,errors:[]},elapsedMs:1});
   expect(render().result).toBeUndefined();
   render().stop();solver.deliver(candidate(2,8,2,15));expect(checker.messages).toHaveLength(1);
-  check(checker);expect(render().state).toBe('Stopped');expect(render().result).toMatchObject({documentRevision:8,usedLengthMm:20});
+  check(checker);expect(render().state).toBe('Stopped');expect(render().result).toMatchObject({documentRevision:8,sheets:[{sheetIndex:0}]});
 });

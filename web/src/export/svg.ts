@@ -11,12 +11,14 @@ export function exportSVG(doc: Document,result?: Result): ExportBundle {
   if(result&&result.validation.status!=='passed') throw Error('Only a checked result can be exported.');
   // JS's shortest round-trip decimal preserves each f64 exactly. Both formats
   // consume these same numbers, including every hole, without display rounding.
-  const world=JSON.parse(JSON.stringify(worldParts(doc,result??{placements:documentPlacements(doc)}))) as WorldPart[];
+  const placements = result ? result.sheets.flatMap(s => s.placements) : documentPlacements(doc);
+  const world=JSON.parse(JSON.stringify(worldParts(doc,placements))) as WorldPart[];
   if(world.some(part=>[part.outer,...part.holes].some(ring=>ring.some(point=>point.some(value=>!Number.isFinite(value))))))throw Error('Canvas contains invalid coordinates.');
   if(result){const check=validate(doc,result,world);if(check.status!=='passed')throw Error(`Serialized geometry failed validation: ${check.errors.join(' ')}`);}
   const height=doc.settings.materialWidthMm;
   const extent=world.reduce((box,part)=>part.outer.reduce((b,[x,y])=>[Math.min(b[0],x),Math.min(b[1],y),Math.max(b[2],x),Math.max(b[3],y)],box),[0,0,1,height]);
-  const width=result?.usedLengthMm??extent[2];
+  // WP1: For single sheet, use sheet dimensions
+  const width=result ? doc.settings.materialWidthMm : extent[2];
   const left=result?0:extent[0],top=result?0:height-extent[3];
   const frameWidth=result?width:extent[2]-extent[0],frameHeight=result?height:extent[3]-extent[1];
   const padX=frameWidth*.05,padY=frameHeight*.05,pageWidth=frameWidth+2*padX,pageHeight=frameHeight+2*padY;

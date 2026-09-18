@@ -124,17 +124,25 @@ export function importProject(text:string):ImportReview {
       if(!saved||saved.documentRevision!==project.revision||typeof saved.solverRevision!=='string'||!/^[a-f0-9]{40}(?:\+[a-z0-9.-]{1,64})?$/i.test(saved.solverRevision)||typeof saved.seed!=='string'||!/^\d{1,20}$/.test(saved.seed)||BigInt(saved.seed)>2n**64n-1n||!Number.isFinite(saved.elapsedSeconds)||saved.elapsedSeconds<0)throw Error('Invalid or mismatched result provenance.');
       // A stored badge has no authority. Check the placements against this file's
       // normalized geometry and the current numeric policy in the worker.
-      const candidate:Result={documentRevision:saved.documentRevision,solverRevision:saved.solverRevision,seed:saved.seed,elapsedSeconds:saved.elapsedSeconds,usedLengthMm:saved.usedLengthMm,placements:saved.placements,validation:saved.validation};
+      // Handle both old format (usedLengthMm/placements) and new format (sheets)
+      const savedAny = saved as any;
+      const candidate:Result = 'sheets' in savedAny ? savedAny : {
+        documentRevision:savedAny.documentRevision,solverRevision:savedAny.solverRevision,seed:savedAny.seed,
+        elapsedSeconds:savedAny.elapsedSeconds,
+        sheets:[{sheetIndex:0,placements:savedAny.placements,utilization:0}],
+        validation:savedAny.validation
+      };
       const validation=validate(document,candidate);
       if(validation.status!=='passed')throw Error(validation.errors.join(' '));
       if(project.placements!==undefined) {
-        const draft=documentPlacements(document),checked=new Map(candidate.placements.map(placement=>[placementKey(placement),placement]));
+        const draft=documentPlacements(document),checked=new Map(candidate.sheets.flatMap(s=>s.placements).map(placement=>[placementKey(placement),placement]));
         if(draft.length!==checked.size||draft.some(placement=>!samePlacement(placement,checked.get(placementKey(placement))))) throw Error('Saved result does not match the explicit copy positions in this project.');
       }
       result={...candidate,validation};warnings.push('Saved result rechecked successfully.');
     }catch(error){warnings.push(`Saved result was discarded: ${error instanceof Error?error.message:String(error)} The parts and settings can still be loaded.`);}
   }
-  return {document:withDocumentPlacements(document,result?.placements),result,warnings,replace:true};
+  const allPlacements = result?.sheets.flatMap(s => s.placements);
+  return {document:withDocumentPlacements(document,allPlacements),result,warnings,replace:true};
 }
 
 export function exportProject(document:Document,revision:number,result?:Result):string {

@@ -6,7 +6,8 @@ import {worldParts,type WorldPart} from './validate';
 export type LiveGeometry={world:WorldPart[];overlaps:Ring[][];errors:string[]};
 // Display only: a live frame never grants validation or export authority.
 export function liveGeometry(doc:Document,result:Result):LiveGeometry {
-  const world=worldParts(doc,result),boxes=world.map(p=>bounds(p.outer)),overlaps:Ring[][]=[],errors:string[]=[];
+  const allPlacements = result.sheets.flatMap(sheet => sheet.placements);
+  const world=worldParts(doc,allPlacements),boxes=world.map(p=>bounds(p.outer)),overlaps:Ring[][]=[],errors:string[]=[];
   for(let i=0;i<world.length;i++)for(let j=0;j<i;j++) {
     const a=boxes[i],b=boxes[j];
     if(a[0]>=b[2]||b[0]>=a[2]||a[1]>=b[3]||b[1]>=a[3])continue;

@@ -10,9 +10,10 @@ import { bounds } from '../src/geometry/normalize';
 
 function fixture() {
   const part={...newPart([[0,0],[1,0],[1,1],[0,1]]),id:'square',quantity:2};
-  const doc:Document={name:'test',parts:[part],settings:{...DEFAULT_SETTINGS,materialWidthMm:2,partClearanceMm:0,edgeMarginMm:0}};
-  const result:Result={documentRevision:1,solverRevision:'test',seed:'42',elapsedSeconds:1,usedLengthMm:2,
-    placements:[{partId:part.id,copyIndex:0,xMm:0,yMm:0,angleDeg:0},{partId:part.id,copyIndex:1,xMm:1,yMm:0,angleDeg:0}],
+  const doc:Document={name:'test',parts:[part],settings:{...DEFAULT_SETTINGS,materialWidthMm:2,sheetHeightMm:2,partClearanceMm:0,edgeMarginMm:0}};
+  const placements=[{partId:part.id,copyIndex:0,xMm:0,yMm:0,angleDeg:0},{partId:part.id,copyIndex:1,xMm:1,yMm:0,angleDeg:0}];
+  const result:Result={documentRevision:1,solverRevision:'test',seed:'42',elapsedSeconds:1,
+    sheets:[{sheetIndex:0,placements,utilization:0}],
     validation:{status:'pending',overlapAreaMm2:0,maxBoundaryViolationMm:0,minClearanceMm:null,errors:[]}};
   return {doc,result};
 }
@@ -31,7 +32,7 @@ describe('independent layout validation',()=>{
   });
   it('frames a styled SVG without changing reimported dimensions or adding decorative parts',()=>{
     const {doc,result}=fixture();doc.name='Plate <script> & "test"';
-    doc.parts[0].quantity=1;result.placements.pop();
+    doc.parts[0].quantity=1;result.sheets[0].placements.pop();
     result.validation=validate(doc,result);
     const {svg}=exportSVG(doc,result);
     expect(svg).toContain('viewBox="-0.1 -0.1 2.2 2.2"');
@@ -50,37 +51,37 @@ describe('independent layout validation',()=>{
   it.each(['missing','duplicate','unknown','reflection','wrong-angle','non-finite','out-of-bounds'] as const)('rejects %s',kind=>{
     const {doc,result}=fixture();
     switch(kind) {
-      case 'missing':result.placements.pop();break;
-      case 'duplicate':result.placements[1].copyIndex=0;break;
-      case 'unknown':result.placements[1].partId='other';break;
-      case 'reflection':Object.assign(result.placements[1],{scaleX:-1});break;
-      case 'wrong-angle':result.placements[1].angleDeg=90;break;
-      case 'non-finite':result.placements[1].xMm=NaN;break;
-      case 'out-of-bounds':result.placements[1].xMm=1.00001;break;
+      case 'missing':result.sheets[0].placements.pop();break;
+      case 'duplicate':result.sheets[0].placements[1].copyIndex=0;break;
+      case 'unknown':result.sheets[0].placements[1].partId='other';break;
+      case 'reflection':Object.assign(result.sheets[0].placements[1],{scaleX:-1});break;
+      case 'wrong-angle':result.sheets[0].placements[1].angleDeg=90;break;
+      case 'non-finite':result.sheets[0].placements[1].xMm=NaN;break;
+      case 'out-of-bounds':result.sheets[0].placements[1].xMm=1.00001;break;
     }
     expect(validate(doc,result).status).toBe('failed');
   });
   it('rejects sliver overlap at the specified 1e-8 mm² threshold',()=>{
-    const {doc,result}=fixture();result.placements[1].xMm=1-1e-7;
+    const {doc,result}=fixture();result.sheets[0].placements[1].xMm=1-1e-7;
     const check=validate(doc,result);expect(check.status).toBe('failed');expect(check.overlapAreaMm2).toBeGreaterThan(1e-8);
   });
   it('rejects a serialized contour that changes the part even if it still fits',()=>{
-    const {doc,result}=fixture(),serialized=worldParts(doc,result);
+    const {doc,result}=fixture(),serialized=worldParts(doc,result.sheets[0].placements);
     serialized[0].outer[1][0]=.9;
     expect(validate(doc,result,serialized)).toMatchObject({status:'failed',errors:['Serialized contours differ from the rigidly transformed input geometry.']});
   });
   it('rejects containment and coincidence, including placement inside a retained hole',()=>{
-    const {doc,result}=fixture();result.placements[1].xMm=0;
+    const {doc,result}=fixture();result.sheets[0].placements[1].xMm=0;
     expect(validate(doc,result).status).toBe('failed');
     const large={...newPart([[0,0],[10,0],[10,10],[0,10]]),id:'large',holes:[[[2,2],[2,8],[8,8],[8,2]] as [number,number][]]};
     doc.parts[0].quantity=1;doc.parts.push(large);doc.settings.materialWidthMm=10;result.usedLengthMm=10;
-    result.placements[0].xMm=4;result.placements[0].yMm=4;result.placements[1]={partId:'large',copyIndex:0,xMm:0,yMm:0,angleDeg:0};
+    result.sheets[0].placements[0].xMm=4;result.sheets[0].placements[0].yMm=4;result.sheets[0].placements[1]={partId:'large',copyIndex:0,xMm:0,yMm:0,angleDeg:0};
     expect(validate(doc,result).status).toBe('failed');
   });
   it('measures clearance without doubling it',()=>{
-    const {doc,result}=fixture();result.usedLengthMm=3;result.placements[1].xMm=2;doc.settings.partClearanceMm=1;
+    const {doc,result}=fixture();doc.settings.materialWidthMm=3;result.sheets[0].placements[1].xMm=2;doc.settings.partClearanceMm=1;
     expect(validate(doc,result)).toMatchObject({status:'passed',minClearanceMm:1});
-    result.placements[1].xMm=1.9;expect(validate(doc,result).status).toBe('failed');
+    result.sheets[0].placements[1].xMm=1.9;expect(validate(doc,result).status).toBe('failed');
   });
   it('rejects self-crossing contours and invalid holes',()=>{
     expect(()=>normalizeRing([[0,0],[2,2],[0,2],[2,0]])).toThrow();
@@ -99,7 +100,7 @@ it('JSON preserves rotation semantics, scales geometry and rejects empty orienta
 it('exports overlapping manual copies outside the material without moving or certifying them',()=>{
   const {doc,result}=fixture();
   doc.parts[0].holes=[[[.2,.2],[.2,.4],[.4,.4],[.4,.2]]];
-  doc.placements=result.placements.map(p=>({...p,xMm:-5,yMm:4}));
+  doc.placements=result.sheets[0].placements.map(p=>({...p,xMm:-5,yMm:4}));
   const bundle=exportSVG(doc);
   expect(bundle.world[0].outer).toEqual([[-5,4],[-4,4],[-4,5],[-5,5]]);
   expect(bundle.world[1]).toEqual({...bundle.world[0],copyIndex:1});

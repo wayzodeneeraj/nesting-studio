@@ -16,13 +16,19 @@ type Run={id:number;revision:number;doc:Document;seed:string;requestedAt:number;
   validationWatchdog?:ReturnType<typeof setTimeout>;diagnostics:Diagnostics};
 export function candidateResult(doc:Document,candidate:Candidate,seed:string):Result {
   const copies=new Map<string,number>(),parts=doc.parts.filter(part=>part.quantity>0);
+  const placements = candidate.solution.layout.placed_items.map(p=>{
+    const partId=parts[p.item_id]?.id ?? `unknown:${p.item_id}`;
+    const copyIndex=copies.get(partId) ?? 0; copies.set(partId,copyIndex+1);
+    return {partId,copyIndex,xMm:p.transformation.translation[0],yMm:p.transformation.translation[1],angleDeg:p.transformation.rotation};
+  });
+  // WP1: Wrap SPP result (strip_width) in single-sheet BPP format
+  // Utilization = parts area / (materialWidth × usedLength) - placeholder, validation computes actual
+  const usedLength = candidate.solution.strip_width;
+  const utilization = 0; // Computed by validation
   return {documentRevision:candidate.documentRevision,solverRevision:SOLVER_REVISION,seed,
-    elapsedSeconds:candidate.elapsedMs/1000,usedLengthMm:candidate.solution.strip_width,
-    placements:candidate.solution.layout.placed_items.map(p=>{
-      const partId=parts[p.item_id]?.id ?? `unknown:${p.item_id}`;
-      const copyIndex=copies.get(partId) ?? 0; copies.set(partId,copyIndex+1);
-      return {partId,copyIndex,xMm:p.transformation.translation[0],yMm:p.transformation.translation[1],angleDeg:p.transformation.rotation};
-    }), validation:{status:'pending',overlapAreaMm2:0,maxBoundaryViolationMm:0,minClearanceMm:null,errors:[]}};
+    elapsedSeconds:candidate.elapsedMs/1000,
+    sheets:[{sheetIndex:0,placements,utilization}],
+    validation:{status:'pending',overlapAreaMm2:0,maxBoundaryViolationMm:0,minClearanceMm:null,errors:[]}};
 }
 export function useSolver() {
   const [state,setState]=useState<RunState>('Ready'),[result,setResult]=useState<Result>(),[elapsed,setElapsed]=useState(0),[error,setError]=useState('');
@@ -114,7 +120,8 @@ export function useSolver() {
       const checked={...r.active.result,validation:data.validation};
       const timing=r.diagnostics.history.find(t=>t.sequence===data.sequence);
       if(timing) Object.assign(timing,{validation:data.validation.status,validationMs:data.elapsedMs,errors:data.validation.errors});
-      if(data.validation.status==='passed' && (!r.best || checked.usedLengthMm<r.best.usedLengthMm)) {
+      // WP1: Single sheet, so accept any valid result (WP3 will compare sheet counts)
+      if(data.validation.status==='passed' && (!r.best || checked.sheets.length<=r.best.sheets.length)) {
         startup.firstValidMs??=performance.now()-requestedAt;
         r.best=checked;
       }

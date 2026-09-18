@@ -121,7 +121,7 @@ export default function App({initialDocument=emptyProject(),initialError='',load
   const showingLive=resultMode==='live'&&!!live;
   const selected=useMemo(()=>[...new Set([...selectedCopies.map(copy=>copy.partId),...unusedSelection])],[selectedCopies,unusedSelection]);
   const visibleResult=showingLive?live?.result:result;
-  const canvasDocument=useMemo(()=>visibleResult?{...doc,placements:visibleResult.placements}:doc,[doc,visibleResult]);
+  const canvasDocument=useMemo(()=>visibleResult?{...doc,placements:visibleResult.sheets.flatMap(s=>s.placements)}:doc,[doc,visibleResult]);
   const chosen=doc.parts.find(p=>p.id===selected[0]);
   const mixedRotations=chosen&&doc.parts.some(part=>selected.includes(part.id)&&rotationValue(part.rotations)!==rotationValue(chosen.rotations));
   const selectedBox=useMemo(()=>selectionBounds(canvasDocument,selected,selectedCopies),[canvasDocument,selected,selectedCopies]);
@@ -132,7 +132,7 @@ export default function App({initialDocument=emptyProject(),initialError='',load
   const browserSaveLabel={error:'Not saved in browser',loading:'Loading project…',unsaved:'Not saved in browser',saving:'Saving in browser…',saved:'Saved in browser'}[browserSaveState];
   useEffect(()=>{
     if(!recoveryReady||loadingExample||invalidSettings||!doc.name.trim())return;
-    const project={...doc,...(recoveryResult?{placements:recoveryResult.placements,result:recoveryResult}:{}),schemaVersion:2 as const,revision};
+    const project={...doc,...(recoveryResult?{placements:recoveryResult.sheets.flatMap(s=>s.placements),result:recoveryResult}:{}),schemaVersion:2 as const,revision};
     let written=false,active=true;
     const write=()=>{
       if(written)return;written=true;
@@ -145,7 +145,8 @@ export default function App({initialDocument=emptyProject(),initialError='',load
   },[doc,recoveryResult,revision,loadingExample,recoveryReady,invalidSettings]);
   useEffect(()=>{
     if(running||!result) return;
-    const next=withDocumentPlacements(doc,result.placements);
+    const allPlacements = result.sheets.flatMap(s => s.placements);
+    const next=withDocumentPlacements(doc,allPlacements);
     if(!placementLayoutsEqual(doc,next)) setDoc(next);
   },[running,result,doc]);
   useEffect(()=>{if(!running&&result)setResultMode('checked');},[running,result]);
@@ -267,7 +268,8 @@ export default function App({initialDocument=emptyProject(),initialError='',load
   function switchProject(next:ProjectSwitch) {
     cancelDefaultExample();
     const nextRevision=revision+1,checked=next.result?{...next.result,documentRevision:nextRevision}:undefined;
-    const document=withDocumentPlacements(next.document,checked?.placements ?? next.document.placements);
+    const allPlacements = checked ? checked.sheets.flatMap(s=>s.placements) : next.document.placements;
+    const document=withDocumentPlacements(next.document,allPlacements);
     ++operation.current;solver.invalidate();setRevision(nextRevision);setDoc(document);
     history.current=[];future.current=[];fieldEdit.current=undefined;partAnchor.current=0;setUnusedSelection([]);setSelectedCopies([]);setPolygon(undefined);setFiles(undefined);setReview(undefined);setPendingProject(undefined);setError('');setImportWarnings(next.warnings??[]);setFitRequest(n=>n+1);setResultMode(checked?'checked':'live');
     if(checked)solver.load(checked);
@@ -339,7 +341,9 @@ export default function App({initialDocument=emptyProject(),initialError='',load
   const exportName='Woodaakar_Nesting_'+(doc.name.trim().replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').replace(/[. ]+$/g,'').slice(0,100)||'project');
   const maxApprox=useMemo(()=>Math.max(0,...doc.parts.map(p=>p.approximationToleranceMm)),[doc.parts]);
   const totalArea=useMemo(()=>doc.parts.reduce((n,p)=>n+netArea(p)*p.quantity,0),[doc.parts]);
-  const utilization=result?totalArea/(doc.settings.materialWidthMm*result.usedLengthMm)*100:0;
+  // WP1: Single sheet utilization
+  const sheetArea = doc.settings.materialWidthMm * doc.settings.sheetHeightMm;
+  const utilization=result?totalArea/sheetArea*100:0;
   const first=solver.diagnostics.current?.history.find(t=>t.validation==='passed');
   return <div className="app" onBlurCapture={()=>{fieldEdit.current=undefined;}} onKeyDown={e=>{if(e.key==='Enter'&&e.target instanceof HTMLInputElement&&e.target.hasAttribute('data-undo-field')){e.preventDefault();e.target.blur();}}} onMouseDownCapture={e=>{const target=e.target;focusClick.current=target instanceof HTMLInputElement&&['text','number'].includes(target.type)&&document.activeElement!==target?target:null;}} onMouseUpCapture={e=>{if(focusClick.current===e.target){e.preventDefault();focusClick.current.select();}focusClick.current=null;}} onFocusCapture={e=>{const input=e.target;if(input instanceof HTMLInputElement&&['text','number'].includes(input.type))input.select();}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(!document.querySelector('dialog[open]'))void openFiles(e.dataTransfer.files);}}>
     <header className="header"><div className="brand-block"><a className="brand" aria-label="Woodaakar Nesting" href={import.meta.env.BASE_URL}>Woodaakar Nesting</a><p className="tagline">Professional nesting for your CNC shop</p></div>
@@ -421,7 +425,7 @@ export default function App({initialDocument=emptyProject(),initialError='',load
     </main>
     <footer className="statusbar"><div className="run-controls"><span id="compression-tooltip" role="tooltip" className="compression-tooltip"><strong>Skip to compression</strong>End exploration and refine the best layout.</span>{running?<><button className="run-button" onClick={solver.stop}>Stop</button>{(solver.state==='Initializing'||solver.state==='Running'&&solver.phase==='Exploration')&&<button className="run-button skip-compression" aria-label="Skip to compression" disabled={solver.state!=='Running'||solver.skipping||!solver.result} aria-describedby="compression-tooltip" onClick={solver.skipToCompression}><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M3 5v14l9-7zM12 5v14l9-7z"/></svg></button>}</>:<button className="run-button" disabled={locked||invalidSettings||!doc.parts.some(part=>part.quantity>0)||!!polygon} onClick={()=>void run()}>{result?'Run again':'Nest parts'}</button>}</div>
       <div className="run-status"><span className="status-symbol" aria-hidden="true"><i className={running||busy?'active':undefined}/></span><span role="status" className="run-state"><span>{busy?'Checking inputs':loadingExample?'Loading example…':solver.state==='Running'&&solver.phase?(solver.skipping?'Switching…':solver.phase):solver.state}</span>{(running||solver.state==='Complete'||solver.state==='Stopped')&&<span className="run-elapsed">{solver.elapsed.toFixed(1)} s</span>}</span>{solver.workers&&<small className="worker-status" title={solver.workers.reason} data-worker-count={solver.workers.actual}>{`${solver.workers.actual} solver worker${solver.workers.actual===1?'':'s'}`}{solver.workers.requested?` / ${solver.workers.requested} requested`:' · automatic'}{solver.workers.reason&&' · fallback'}</small>}</div>
-      <div className="metrics"><span>{showingLive?'Best valid length':'Used length'} <strong>{result?`${length(result.usedLengthMm)} ${unit}`:'—'}</strong></span><span>Material utilization <strong>{result?`${utilization.toFixed(2)}%`:'—'}</strong></span>{result&&first&&<span>Length improvement <strong>{((1-result.usedLengthMm/first.lengthMm)*100).toFixed(1)}%</strong></span>}</div>
+      <div className="metrics"><span>Sheets used <strong>{result?result.sheets.length:'—'}</strong></span><span>Material utilization <strong>{result?`${utilization.toFixed(2)}%`:'—'}</strong></span></div>
       <div className="export-actions"><select aria-label="Export format" value={exportFormat} onChange={e=>setExportFormat(e.target.value as 'svg'|'dxf'|'pdf')}><option value="svg">SVG</option><option value="dxf">DXF</option><option value="pdf">PDF</option></select><button disabled={busy||invalidSettings} className="primary" onClick={()=>void exportLayout()}>Download {exportFormat.toUpperCase()}</button></div>
 
     </footer>

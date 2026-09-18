@@ -58,7 +58,7 @@ export default function Workspace({ document: doc, result, live, selected, selec
 
   const moved = useMemo(() => new Map(displayedDrag?.copies.map(copy => [placementKey(copy.ref),
     [copy.position[0] + displayedDrag.delta[0], copy.position[1] + displayedDrag.delta[1]] as Point])), [displayedDrag]);
-  const placements = useMemo(() => result?.placements ?? documentPlacements(doc), [result, doc]);
+  const placements = useMemo(() => result ? result.sheets.flatMap(s => s.placements) : documentPlacements(doc), [result, doc]);
   const world = !!result;
   const partPaths = useMemo(() => doc.parts.map(part => pathData([part.outer, ...part.holes])), [doc.parts]);
   const drawings = useMemo(() => {
@@ -76,7 +76,7 @@ export default function Workspace({ document: doc, result, live, selected, selec
       const radians = drawing.angleDeg * Math.PI / 180, c = Math.cos(radians), s = Math.sin(radians);
       for (const [x, y] of drawing.outer) all.push([drawing.position[0] + x * c - y * s, -drawing.position[1] - (x * s + y * c)]);
     }
-    if (world) all.push([0, 0], [result!.usedLengthMm, -doc.settings.materialWidthMm]);
+    if (world) all.push([0, 0], [doc.settings.materialWidthMm, -doc.settings.sheetHeightMm]);
     if (!all.length) return;
     const [x0, y0, x1, y1] = bounds(all), pad = Math.max(x1 - x0, y1 - y0) * .07 + 2;
     setCamera({ x: x0 - pad, y: y0 - pad, w: x1 - x0 + 2 * pad, h: y1 - y0 + 2 * pad });
@@ -240,8 +240,8 @@ export default function Workspace({ document: doc, result, live, selected, selec
       }}
       onPointerCancel={event => { touches.current.delete(event.pointerId); if (!touches.current.size) pinch.current = undefined; touchDraw.current = undefined; setDrag(undefined); setMarquee(undefined); }}
       onLostPointerCapture={event => { touches.current.delete(event.pointerId); if (!touches.current.size) pinch.current = undefined; touchDraw.current = undefined; setDrag(undefined); setMarquee(undefined); }}>
-      {world && <><rect x="0" y={-doc.settings.materialWidthMm} width={result!.usedLengthMm} height={doc.settings.materialWidthMm} fill={outlines ? 'none' : 'var(--material-fill)'} stroke="var(--secondary)" vectorEffect="non-scaling-stroke" />
-        <text x="0" y={-doc.settings.materialWidthMm - 2} fontSize={camera.w / 70} fill="var(--muted)">{(result!.usedLengthMm / unitScale(displayUnit)).toFixed(2)} {displayUnit} × {displayLength(doc.settings.materialWidthMm, displayUnit)} {displayUnit}</text></>}
+      {world && <><rect x="0" y={-doc.settings.sheetHeightMm} width={doc.settings.materialWidthMm} height={doc.settings.sheetHeightMm} fill={outlines ? 'none' : 'var(--material-fill)'} stroke="var(--secondary)" vectorEffect="non-scaling-stroke" />
+        <text x="0" y={-doc.settings.sheetHeightMm - 2} fontSize={camera.w / 70} fill="var(--muted)">{displayLength(doc.settings.materialWidthMm, displayUnit)} {displayUnit} × {displayLength(doc.settings.sheetHeightMm, displayUnit)} {displayUnit}</text></>}
       {showWidth && <g className="material-width-band" data-material-width-band={doc.settings.materialWidthMm} pointerEvents="none" aria-hidden="true"><rect x={coordinates.left} y={-doc.settings.materialWidthMm} width={size.width * unit} height={doc.settings.materialWidthMm} /><path d={`M${coordinates.left},0h${size.width * unit}M${coordinates.left},${-doc.settings.materialWidthMm}h${size.width * unit}`} vectorEffect="non-scaling-stroke" /></g>}
       <g className="coordinate-grid" aria-hidden="true" pointerEvents="none" data-grid-step={coordinates.major}>{(['minor', 'major', 'origin'] as const).map(kind => <path key={kind} className={kind} fill="none" vectorEffect="non-scaling-stroke" d={[...coordinates.x.filter(t => (t.value === 0 ? 'origin' : t.major ? 'major' : 'minor') === kind).map(t => `M${t.mm},${coordinates.top}v${size.height * unit}`), ...coordinates.y.filter(t => (t.value === 0 ? 'origin' : t.major ? 'major' : 'minor') === kind).map(t => `M${coordinates.left},${-t.mm}h${size.width * unit}`)].join(' ')} />)}</g>
       {shapes}
